@@ -1,0 +1,17 @@
+# Example model config (weights not bundled in P1-M01)
+id: person
+name: 人员检测
+backend: yolo
+model_path: weights/person.pt
+task: detect
+conf: 0.45
+iou: 0.5
+device: cpu
+
+class_display:
+  person: 人员
+
+render:
+  color: "#FF3B30"
+  line_width: 2
+  label_template: "{id}:{class}"

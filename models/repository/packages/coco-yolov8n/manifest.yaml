@@ -1,0 +1,21 @@
+id: coco_yolov8n_repo
+name: 内置 COCO YOLOv8n
+backend: yolo
+model_path: ../../examples/weights/yolov8n.pt
+task: detect
+conf: 0.4
+iou: 0.5
+device: cpu
+version: "8.4.0"
+package_id: coco-yolov8n
+
+class_display:
+  person: 人员
+  car: 汽车
+  dog: 狗
+  cat: 猫
+
+render:
+  color: "#1F9D66"
+  line_width: 2
+  label_template: "{id}:{class}"

@@ -1,0 +1,30 @@
+# Node / Electron
+node_modules/
+desktop/out/
+desktop/dist/
+*.log
+npm-debug.log*
+
+# Python
+backend/.venv/
+backend/**/__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+
+# Runtime
+logs/
+projects/*/
+!projects/.gitkeep
+
+# IDE
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# Local
+*.local
+.env

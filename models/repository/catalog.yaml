@@ -1,0 +1,21 @@
+# 内置模型仓库目录（本地包）
+schema_version: 1
+packages:
+  - id: coco-yolov8n
+    name: COCO YOLOv8n
+    version: "8.4.0"
+    task: detect
+    backend: yolo
+    source: builtin
+    entry: packages/coco-yolov8n/manifest.yaml
+    license: AGPL-3.0
+    tags: [coco, detect, yolo, official]
+  - id: coco-yolov8n-seg
+    name: COCO YOLOv8n-Seg
+    version: "8.4.0"
+    task: segment
+    backend: yolo
+    source: builtin
+    entry: packages/coco-yolov8n-seg/manifest.yaml
+    license: AGPL-3.0
+    tags: [coco, segment, yolo, official]

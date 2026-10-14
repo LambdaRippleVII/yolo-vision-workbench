@@ -1,0 +1,23 @@
+[project]
+name = "yolo-vision-workbench-backend"
+version = "0.1.0"
+description = "YOLO Vision Workbench Python backend service"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.32.0",
+    "websockets>=13.0",
+    "pydantic>=2.9.0",
+    "loguru>=0.7.2",
+    "PyYAML>=6.0.2",
+]
+
+[project.scripts]
+yolo-vision-workbench-backend = "app.main:main"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]

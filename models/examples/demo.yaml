@@ -1,0 +1,23 @@
+# mock demo model — no weights required (backend: mock)
+id: demo
+name: 演示模型
+backend: mock
+model_path: weights/demo.pt
+task: detect
+conf: 0.45
+iou: 0.5
+device: cpu
+classes:
+  - person
+  - helmet
+  - vest
+
+class_display:
+  person: 人员
+  helmet: 安全帽
+  vest: 反光衣
+
+render:
+  color: "#2F6FED"
+  line_width: 2
+  label_template: "{id}:{class}"

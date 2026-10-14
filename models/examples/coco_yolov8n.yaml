@@ -1,0 +1,23 @@
+# COCO YOLOv8n detect（真实 ultralytics 权重）
+id: coco_yolov8n
+name: COCO YOLOv8n
+backend: yolo
+model_path: weights/yolov8n.pt
+task: detect
+conf: 0.4
+iou: 0.5
+device: cpu
+
+class_display:
+  person: 人员
+  bicycle: 自行车
+  car: 汽车
+  dog: 狗
+  cat: 猫
+  chair: 椅子
+  bottle: 瓶子
+
+render:
+  color: "#E85D4C"
+  line_width: 2
+  label_template: "{id}:{class}"
