@@ -36,3 +36,6 @@ desktop/release/
 *.7z
 *.exe
 !docs/**/*.zip
+
+# bundled python runtime (build output)
+desktop/release/

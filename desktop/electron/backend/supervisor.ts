@@ -114,6 +114,17 @@ export class ProcessSupervisor extends EventEmitter {
     const envPy = process.env.YOLO_STUDIO_PYTHON
     if (envPy && existsSync(envPy)) return envPy
 
+    // 3) bundled embeddable runtime (installer / portable)
+    const bundled = [
+      join(process.resourcesPath || '', 'python-embed', 'runtime', 'python.exe'),
+      join(this.opts.rootDir, 'python-embed', 'runtime', 'python.exe'),
+      join(this.opts.rootDir, 'resources', 'python-embed', 'runtime', 'python.exe')
+    ]
+    for (const p of bundled) {
+      if (p && existsSync(p)) return p
+    }
+
+    // 4) project venv
     const backendDir = this.resolveBackendDir()
     const venvCandidates =
       platform() === 'win32'
@@ -126,9 +137,8 @@ export class ProcessSupervisor extends EventEmitter {
       if (existsSync(p)) return p
     }
 
-    // 3) system interpreters (checked at spawn time via which)
+    // 5) system interpreters
     if (platform() === 'win32') {
-      // `py` launcher is most reliable when python is not on PATH
       return 'py'
     }
     return 'python3'

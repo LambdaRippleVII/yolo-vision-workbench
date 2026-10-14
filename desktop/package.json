@@ -55,6 +55,13 @@
           "**/*",
           "!**/*.pt"
         ]
+      },
+      {
+        "from": "release/python-embed/runtime",
+        "to": "python-embed/runtime",
+        "filter": [
+          "**/*"
+        ]
       }
     ],
     "win": {
