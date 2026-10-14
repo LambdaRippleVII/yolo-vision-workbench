@@ -30,3 +30,9 @@ projects/*/
 .env
 
 desktop/release/
+
+# Build / distribution artifacts
+*.zip
+*.7z
+*.exe
+!docs/**/*.zip
