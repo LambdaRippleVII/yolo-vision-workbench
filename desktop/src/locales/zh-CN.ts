@@ -1,6 +1,9 @@
 /** 简体中文文案（全量）。术语表见 docs/LOCALIZATION.md */
 export default {
   'app.name': 'YOLO Vision Workbench',
+  'splash.starting': '正在启动后端服务…',
+  'splash.restarting': '正在重启后端服务…',
+  'splash.hint': '首次启动可能需要几秒钟',
   'app.tagline': '专业 AI 视觉工程平台',
 
   'nav.workbench': '工作台',

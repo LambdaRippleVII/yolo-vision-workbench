@@ -20,7 +20,7 @@ def _load_one(path: Path, source: str) -> ModelConfig | None:
             raw["id"] = path.stem
         cfg = ModelConfig.model_validate(raw)
         cfg.config_path = str(path)
-        cfg.source = source
+        cfg.source_dir = source
         return cfg
     except Exception as exc:  # noqa: BLE001
         logger.warning("failed to parse model config {}: {}", path, exc)

@@ -136,7 +136,7 @@ class ModelManager:
             model_path=str(path),
             task="detect",
             config_path=str(path),
-            source="user",
+            source_dir="user",
         )
         with self._lock:
             self._configs[model_id] = cfg

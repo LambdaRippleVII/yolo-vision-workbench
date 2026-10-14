@@ -1,0 +1,41 @@
+# COCO 80-class detection · Ultralytics YOLO26n
+id: coco_yolo26n
+name: COCO · YOLO26n
+backend: yolo
+model_path: weights/yolo26n.pt
+task: detect
+conf: 0.4
+iou: 0.5
+device: cpu
+
+# 来源 / License
+source:
+  dataset: COCO
+  author: Ultralytics
+  repo: https://github.com/ultralytics/ultralytics
+  license: AGPL-3.0
+  model: YOLO26n
+  note: 预训练权重来自 Ultralytics 官方发布；本软件使用须遵守 AGPL-3.0
+
+class_display:
+  person: 人员
+  bicycle: 自行车
+  car: 汽车
+  motorcycle: 摩托车
+  airplane: 飞机
+  bus: 公共汽车
+  train: 火车
+  truck: 卡车
+  boat: 船
+  traffic light: 交通灯
+  dog: 狗
+  cat: 猫
+  chair: 椅子
+  bottle: 瓶子
+
+class_color_mode: auto
+
+render:
+  color: "#2F6FED"
+  line_width: 2
+  label_template: "{id}:{class}"

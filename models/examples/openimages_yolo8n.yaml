@@ -1,0 +1,24 @@
+# OpenImagesV7 detection · Ultralytics YOLOv8n
+id: openimages_yolo8n
+name: OpenImagesV7 · YOLOv8n
+backend: yolo
+model_path: weights/openimages_yolov8n.pt
+task: detect
+conf: 0.4
+iou: 0.5
+device: cpu
+
+source:
+  dataset: OpenImagesV7
+  author: Ultralytics
+  repo: https://github.com/ultralytics/ultralytics
+  license: AGPL-3.0
+  model: YOLOv8n
+  note: OpenImages 预训练权重来自 Ultralytics；数据集版权归 Google Open Images 所有
+
+class_color_mode: auto
+
+render:
+  color: "#0E7C86"
+  line_width: 2
+  label_template: "{id}:{class}"

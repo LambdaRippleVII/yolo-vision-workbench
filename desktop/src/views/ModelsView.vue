@@ -13,13 +13,14 @@ interface ClassItem {
 }
 
 interface ModelItem {
+  source?: { dataset?: string; author?: string; license?: string; model?: string; repo?: string }
+  source_dir?: string
   model_id: string
   name: string
   backend: string
   task: string
   model_path: string
   loaded: boolean
-  source?: string
   class_list: ClassItem[]
   class_display?: Record<string, string>
   class_colors?: Record<string, string>
@@ -139,7 +140,7 @@ onMounted(() => {
               :class="{ 'row-selected': m.model_id === selectedId }"
               @click="selectedId = m.model_id; resetDraft()"
             >
-              <td>{{ m.name }}</td>
+              <td>{{ m.name }}<div class="src-meta">{{ m.source?.dataset }} · {{ m.source?.model }} · {{ m.source?.license }}</div></td>
               <td>{{ m.backend }}</td>
               <td>
                 <span class="badge" :class="m.loaded ? 'ok' : ''">

@@ -31,10 +31,12 @@ class ModelConfig(BaseModel):
     class_color_mode: str = "auto"  # auto | manual
     class_colors: dict[str, str] = Field(default_factory=dict)
     render: RenderConfig = Field(default_factory=RenderConfig)
+    # attribution / license metadata for built-in models
+    source: dict[str, Any] = Field(default_factory=dict)
 
     # filled by scanner
     config_path: str | None = None
-    source: str = "local"  # local | repository | user
+    source_dir: str = "local"  # local | repository | user  (not YAML source:)
 
     def display_name_of(self, class_name: str) -> str:
         return self.class_display.get(class_name, class_name)
@@ -58,6 +60,7 @@ class ModelConfig(BaseModel):
             "model_path": self.model_path,
             "config_path": self.config_path,
             "source": self.source,
+            "source_dir": self.source_dir,
             "classes": list(self.classes),
             "class_display": dict(self.class_display),
             "class_color_mode": self.class_color_mode,

@@ -97,3 +97,9 @@ TBD（计划开源，许可证待定）
 
 - [Ultralytics YOLO](https://github.com/ultralytics/ultralytics)
 - [Electron](https://www.electronjs.org/) · [Vue](https://vuejs.org/) · [FastAPI](https://fastapi.tiangolo.com/)
+
+## 许可与致谢
+
+- **Ultralytics YOLO** — 推理框架与预训练权重，许可 **AGPL-3.0**（https://github.com/ultralytics/ultralytics）
+- 分发本软件或对外提供服务须遵守 AGPL-3.0，详见 [NOTICE.md](NOTICE.md)
+- 内置模型：COCO / Objects365 / OpenImagesV7 的 Ultralytics 预训练权重（source 字段注明来源）

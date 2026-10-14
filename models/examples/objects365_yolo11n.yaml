@@ -1,0 +1,24 @@
+# Objects365 detection · Ultralytics YOLO11n
+id: objects365_yolo11n
+name: Objects365 · YOLO11n
+backend: yolo
+model_path: weights/objects365_yolo11n.pt
+task: detect
+conf: 0.4
+iou: 0.5
+device: cpu
+
+source:
+  dataset: Objects365
+  author: Ultralytics
+  repo: https://github.com/ultralytics/ultralytics
+  license: AGPL-3.0
+  model: YOLO11n
+  note: Objects365 预训练权重来自 Ultralytics；数据集版权归 Objects365 所有
+
+class_color_mode: auto
+
+render:
+  color: "#7C4DFF"
+  line_width: 2
+  label_template: "{id}:{class}"

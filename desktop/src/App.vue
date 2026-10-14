@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import AppHeader from './components/AppHeader.vue'
 import SideNav from './components/SideNav.vue'
 import TopModeBar from './components/TopModeBar.vue'
+import BootSplash from './components/BootSplash.vue'
 import ConsoleDock from './components/ConsoleDock.vue'
 import type { LogLine } from './components/ConsoleDock.vue'
 import { wsClient } from './api/ws'
@@ -202,6 +203,8 @@ watch(() => route.path, () => {
 
 <template>
   <div class="shell">
+    <BootSplash :status="backend.status" :message="backend.message" />
+
     <AppHeader
       :backend="backend"
       :ws-state="wsState"
