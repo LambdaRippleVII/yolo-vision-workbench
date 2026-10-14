@@ -28,3 +28,5 @@ projects/*/
 # Local
 *.local
 .env
+
+desktop/release/

@@ -4,11 +4,13 @@
   "private": true,
   "description": "YOLO Vision Workbench desktop shell (Electron + Vue3)",
   "main": "out/main/index.js",
+  "author": "LambdaRippleVII",
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
-    "typecheck": "vue-tsc --noEmit -p tsconfig.json"
+    "typecheck": "vue-tsc --noEmit -p tsconfig.json",
+    "dist": "electron-vite build && electron-builder --win"
   },
   "dependencies": {
     "pinia": "^2.2.6",
@@ -18,9 +20,35 @@
   "devDependencies": {
     "@vitejs/plugin-vue": "^5.2.1",
     "electron": "^33.2.0",
+    "electron-builder": "^26.15.3",
     "electron-vite": "^2.3.0",
     "typescript": "^5.6.3",
     "vite": "^5.4.11",
     "vue-tsc": "^2.1.10"
+  },
+  "build": {
+    "appId": "com.lambdaripple.yolovisionworkbench",
+    "productName": "YOLO Vision Workbench",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "out/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        "nsis",
+        "zip"
+      ],
+      "artifactName": "YOLO-Vision-Workbench-${version}-${os}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "YOLO Vision Workbench"
+    }
   }
 }
