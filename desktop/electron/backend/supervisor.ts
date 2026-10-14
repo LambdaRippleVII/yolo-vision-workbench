@@ -89,16 +89,58 @@ export class ProcessSupervisor extends EventEmitter {
     this.emit('status', this.getStatus())
   }
 
+  /** Locate backend package dir (dev repo or packaged extraResources). */
+  private resolveBackendDir(): string {
+    const candidates = [
+      join(this.opts.rootDir, 'backend'),
+      join(this.opts.rootDir, 'resources', 'backend'),
+      // packaged: <install>/resources/backend
+      join(process.resourcesPath || '', 'backend'),
+      join(this.opts.rootDir, '..', 'backend')
+    ]
+    for (const c of candidates) {
+      if (c && existsSync(join(c, 'app', 'main.py'))) return resolve(c)
+    }
+    return join(this.opts.rootDir, 'backend')
+  }
+
+  /** Find a usable Python interpreter. */
   private resolvePython(): string {
+    // 1) explicit
     if (this.opts.pythonPath && existsSync(this.opts.pythonPath)) {
       return this.opts.pythonPath
     }
-    const venvPy =
+    // 2) env override
+    const envPy = process.env.YOLO_STUDIO_PYTHON
+    if (envPy && existsSync(envPy)) return envPy
+
+    const backendDir = this.resolveBackendDir()
+    const venvCandidates =
       platform() === 'win32'
-        ? join(this.opts.rootDir, 'backend', '.venv', 'Scripts', 'python.exe')
-        : join(this.opts.rootDir, 'backend', '.venv', 'bin', 'python')
-    if (existsSync(venvPy)) return venvPy
-    return platform() === 'win32' ? 'python' : 'python3'
+        ? [
+            join(backendDir, '.venv', 'Scripts', 'python.exe'),
+            join(this.opts.rootDir, 'backend', '.venv', 'Scripts', 'python.exe')
+          ]
+        : [join(backendDir, '.venv', 'bin', 'python'), join(this.opts.rootDir, 'backend', '.venv', 'bin', 'python')]
+    for (const p of venvCandidates) {
+      if (existsSync(p)) return p
+    }
+
+    // 3) system interpreters (checked at spawn time via which)
+    if (platform() === 'win32') {
+      // `py` launcher is most reliable when python is not on PATH
+      return 'py'
+    }
+    return 'python3'
+  }
+
+  /** Extra args for `py` launcher (needs -3). */
+  private pythonArgs(scriptArgs: string[]): string[] {
+    const py = this.resolvePython()
+    if (platform() === 'win32' && /(^|[\\/])py(\.exe)?$/i.test(py)) {
+      return ['-3', '-m', ...scriptArgs]
+    }
+    return scriptArgs
   }
 
   private get wsUrl(): string {
@@ -185,18 +227,19 @@ export class ProcessSupervisor extends EventEmitter {
     if (this.child) return
     this.setStatus('starting', '正在启动后端服务…')
 
-    const backendDir = resolve(this.opts.rootDir, 'backend')
+    const backendDir = this.resolveBackendDir()
     const python = this.resolvePython()
+    const args = this.pythonArgs(['app.main'])
 
     const env = {
       ...process.env,
       YOLO_STUDIO_ROOT: this.opts.rootDir,
       YOLO_STUDIO_HOST: this.opts.host,
       YOLO_STUDIO_PORT: String(this.opts.port),
-      PYTHONUTF8: '1'
+      PYTHONUTF8: '1',
+      PYTHONPATH: backendDir
     }
 
-    const args = ['-m', 'app.main']
     this.emit('log', {
       level: 'INFO',
       source: 'supervisor',
@@ -209,11 +252,16 @@ export class ProcessSupervisor extends EventEmitter {
       windowsHide: true
     })
     this.child.on('error', (err) => {
+      const msg =
+        (err as NodeJS.ErrnoException).code === 'ENOENT'
+          ? '未找到 Python。请安装 Python 3.11+，或设置环境变量 YOLO_STUDIO_PYTHON 指向 python.exe'
+          : `后端启动失败: ${err.message}`
       this.emit('log', {
         level: 'ERROR',
         source: 'supervisor',
-        message: `后端启动失败: ${err.message}`
+        message: msg
       })
+      this.setStatus('failed', msg)
     })
     const logLine = (buf: Buffer) => {
       const line = buf.toString().trimEnd()

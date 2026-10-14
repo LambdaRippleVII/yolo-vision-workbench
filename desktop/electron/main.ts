@@ -3,7 +3,7 @@
  * 产品名：YOLO Vision Workbench
  */
 import { app, BrowserWindow, dialog, ipcMain, Menu, shell, MenuItemConstructorOptions } from 'electron'
-import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
 import { join, resolve, basename } from 'path'
 import { ProcessSupervisor } from './backend/supervisor'
 
@@ -15,7 +15,7 @@ const ATTACH = process.env.YOLO_STUDIO_ATTACH === '1'
 
 function logMain(message: string): void {
   try {
-    const dir = resolve(app.getAppPath(), '..', 'logs')
+    const dir = resolve(repoRoot(), 'logs')
     mkdirSync(dir, { recursive: true })
     appendFileSync(join(dir, 'electron-main.log'), `${new Date().toISOString()} ${message}\n`)
   } catch {
@@ -24,6 +24,12 @@ function logMain(message: string): void {
 }
 
 function repoRoot(): string {
+  // Packaged: use resources dir (contains backend/, models/)
+  const res = process.resourcesPath
+  if (res && existsSync(join(res, 'backend'))) {
+    return res
+  }
+  // Dev: desktop/ -> project root
   const desktopDir = app.getAppPath()
   return resolve(desktopDir, '..')
 }

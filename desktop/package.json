@@ -37,6 +37,26 @@
       "out/**/*",
       "package.json"
     ],
+    "extraResources": [
+      {
+        "from": "../backend",
+        "to": "backend",
+        "filter": [
+          "**/*",
+          "!.venv/**",
+          "!**/__pycache__/**",
+          "!wheels/**"
+        ]
+      },
+      {
+        "from": "../models",
+        "to": "models",
+        "filter": [
+          "**/*",
+          "!**/*.pt"
+        ]
+      }
+    ],
     "win": {
       "target": [
         "nsis",
