@@ -145,12 +145,17 @@ export class ProcessSupervisor extends EventEmitter {
   }
 
   /** Extra args for `py` launcher (needs -3). */
-  private pythonArgs(scriptArgs: string[]): string[] {
+  /**
+   * Launch via backend/run_backend.py so embeddable Python (._pth) finds `app`.
+   */
+  private pythonArgs(backendDir: string): string[] {
     const py = this.resolvePython()
+    const script = join(backendDir, 'run_backend.py')
+    const base = [script]
     if (platform() === 'win32' && /(^|[\\/])py(\.exe)?$/i.test(py)) {
-      return ['-3', '-m', ...scriptArgs]
+      return ['-3', ...base]
     }
-    return scriptArgs
+    return base
   }
 
   private get wsUrl(): string {
@@ -239,7 +244,7 @@ export class ProcessSupervisor extends EventEmitter {
 
     const backendDir = this.resolveBackendDir()
     const python = this.resolvePython()
-    const args = this.pythonArgs(['app.main'])
+    const args = this.pythonArgs(backendDir)
 
     const env = {
       ...process.env,
