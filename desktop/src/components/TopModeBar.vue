@@ -1,15 +1,16 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import Icon from './Icon.vue'
 import { t } from '../locales'
 
 const route = useRoute()
 const router = useRouter()
 
 const inferenceItems = computed(() => [
-  { path: '/image', label: t('nav.imageDetect'), icon: '▣' },
-  { path: '/video-editor', label: t('nav.videoEditor'), icon: '▶' },
-  { path: '/camera', label: t('nav.camera'), icon: '⬡' }
+  { path: '/image', label: t('nav.imageDetect'), icon: 'image' as const },
+  { path: '/video-editor', label: t('nav.videoEditor'), icon: 'video' as const },
+  { path: '/camera', label: t('nav.camera'), icon: 'camera' as const }
 ])
 
 function go(path: string): void {
@@ -27,7 +28,7 @@ function go(path: string): void {
       :class="{ active: route.path.startsWith(item.path) }"
       @click="go(item.path)"
     >
-      <span class="icon">{{ item.icon }}</span>
+      <Icon :name="item.icon" :size="16" />
       {{ item.label }}
     </button>
   </div>
@@ -46,7 +47,7 @@ function go(path: string): void {
   height: 32px;
   padding: 0 12px;
   border: 1px solid transparent;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--text-secondary);
   font-size: var(--text-md);
@@ -58,10 +59,7 @@ function go(path: string): void {
 .mode-btn.active {
   background: var(--accent-soft);
   color: var(--accent);
-  border-color: color-mix(in srgb, var(--accent) 25%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 22%, transparent);
   font-weight: 550;
-}
-.icon {
-  font-size: 12px;
 }
 </style>

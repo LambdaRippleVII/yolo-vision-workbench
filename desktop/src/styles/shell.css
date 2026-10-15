@@ -373,7 +373,6 @@
   background: var(--bg-panel);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-sm);
 }
 
 .panel-head {
@@ -401,7 +400,7 @@
   align-items: center;
   justify-content: center;
   gap: var(--space-3);
-  min-height: 220px;
+  min-height: 200px;
   padding: var(--space-8) var(--space-4);
   color: var(--text-muted);
   text-align: center;
