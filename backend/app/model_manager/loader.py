@@ -11,6 +11,7 @@ from loguru import logger
 from app.inference.base import BackendType
 from app.model_manager.config_schema import ModelConfig
 from app.model_manager.metadata import class_entries
+from app.model_manager.class_persist import persist_classes
 from app.model_manager.scanner import scan_models
 
 
@@ -22,6 +23,7 @@ class ModelManager:
         self._loaded: dict[str, Any] = {}
         self._lock = threading.RLock()
         self.refresh()
+        self.init_class_lists()
 
     def refresh(self) -> list[ModelConfig]:
         with self._lock:
@@ -68,10 +70,27 @@ class ModelManager:
             else:
                 names = list(cfg.classes)
             setattr(cfg, "_peeked_classes", names)
+            if names:
+                persist_classes(cfg.config_path, names)
+                if not cfg.classes:
+                    cfg.classes = names
             return names
         except Exception as exc:  # noqa: BLE001
             logger.warning("peek classes failed {}: {}", cfg.id, exc)
             return list(cfg.classes) or None
+
+
+    def init_class_lists(self) -> None:
+        """First-time init: extract class names from local weights and cache in YAML."""
+        with self._lock:
+            for cfg in self._configs.values():
+                if getattr(cfg, '_peeked_classes', None):
+                    continue
+                if cfg.backend == 'mock':
+                    continue
+                if cfg.classes:
+                    continue
+                self._peek_classes(cfg)
 
     def get_config(self, model_id: str) -> ModelConfig | None:
         with self._lock:
@@ -112,7 +131,13 @@ class ModelManager:
                 raise
 
             self._loaded[model_id] = runtime
-            logger.info("model loaded: {} path={}", model_id, weight)
+            names = runtime.get_classes()
+            if names:
+                setattr(cfg, "_peeked_classes", names)
+                persist_classes(cfg.config_path, names)
+                if not cfg.classes:
+                    cfg.classes = names
+            logger.info("model loaded: {} path={} classes={}", model_id, weight, len(names) if names else 0)
             return self._public_loaded(model_id)
 
     def load_external(self, model_path: str, *, backend: str = "yolo", name: str | None = None) -> dict[str, Any]:
@@ -143,7 +168,11 @@ class ModelManager:
             runtime = registry.create(backend_type)
             runtime.load_model(path, cfg)
             self._loaded[model_id] = runtime
-            logger.info("external model loaded {}", model_id)
+            names = runtime.get_classes()
+            if names:
+                cfg.classes = names
+                setattr(cfg, "_peeked_classes", names)
+            logger.info("external model loaded {} classes={}", model_id, len(names) if names else 0)
             return self._public_loaded(model_id)
 
     def unload(self, model_id: str) -> None:

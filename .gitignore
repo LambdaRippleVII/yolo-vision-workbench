@@ -39,3 +39,9 @@ desktop/release/
 
 # bundled python runtime (build output)
 desktop/release/
+
+# model weights (downloadable, large)
+*.pt
+*.onnx
+*.engine
+models/examples/weights/
