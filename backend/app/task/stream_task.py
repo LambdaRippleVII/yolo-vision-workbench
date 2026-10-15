@@ -92,7 +92,6 @@ class StreamSession:
     def _run(self) -> None:
         import cv2
 
-        from app.export.draw import draw_objects
 
         try:
             self._cap = cv2.VideoCapture(self.source)
@@ -149,8 +148,6 @@ class StreamSession:
                     objects_now = []
 
                 objects_json = [o.to_json() for o in objects_now]
-                if objects_json:
-                    draw_objects(frame, objects_json)
 
                 ok, buf = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), 80])
                 if not ok:

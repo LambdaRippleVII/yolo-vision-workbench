@@ -96,6 +96,7 @@ function draw(): void {
     ctx.strokeStyle = boxColor
     ctx.strokeRect(rx, ry, rw, rh)
 
+    const modelOffset = ((o.model_id || '').split('').reduce((a, c) => a + c.charCodeAt(0), 0) % 3) * 18
     const drawTag = (
       place: 'top' | 'bottom' | 'left' | 'right',
       text: string,

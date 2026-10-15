@@ -2,6 +2,8 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import CanvasStage, { type BoxObject } from '../components/CanvasStage.vue'
 import ModelPicker from '../components/ModelPicker.vue'
+import LabelConfigModal from '../components/LabelConfigModal.vue'
+import { defaultLabelSettings, type LabelSettings } from '../components/labelTypes'
 import EmptyState from '../components/EmptyState.vue'
 import { wsClient } from '../api/ws'
 import { formatError } from '../utils/errors'
@@ -38,6 +40,8 @@ const infoMsg = ref('')
 const camFrameCount = ref(0)
 const camDetectCount = ref(0)
 const zoom = ref(1)
+const showLabelCfg = ref(false)
+const labelSettings = ref<LabelSettings>(defaultLabelSettings())
 const stageRef = ref<HTMLElement | null>(null)
 
 function setErr(e: unknown): void {
@@ -241,6 +245,7 @@ onUnmounted(() => {
         <button type="button" class="ghost mini" @click="toggleFullscreen">
           {{ t('camera.fullscreen') }}
         </button>
+        <button v-if="!embed" type="button" class="ghost mini" @click="showLabelCfg = true">标签配置</button>
         <button v-if="!embed" type="button" class="ghost mini" @click="openPopout">
           {{ t('camera.popout') }}
         </button>
@@ -252,6 +257,7 @@ onUnmounted(() => {
           :image-url="imageUrl"
           :objects="objects"
           :selected-id="selectedId"
+          :label-settings="labelSettings"
           @select="(id) => (selectedId = id)"
         />
         <EmptyState v-else icon="⬡" :title="t('workbench.cameraLive')" :description="t('camera.empty')" />
@@ -291,6 +297,11 @@ onUnmounted(() => {
       </section>
     </aside>
 
+    <LabelConfigModal
+      v-model:visible="showLabelCfg"
+      v-model:model-value="labelSettings"
+      @apply="(s) => { labelSettings = s }"
+    />
     <p v-if="errorMsg && !embed" class="err">{{ errorMsg }}</p>
     <p v-if="infoMsg && !embed" class="info">{{ infoMsg }}</p>
   </div>
