@@ -130,7 +130,7 @@ async function pickVideo(): Promise<void> {
 async function setVideo(path: string): Promise<void> {
   videoPath.value = path
   const api = window.yoloStudio
-  videoUrl.value = (api?.mediaUrl ? await api.mediaUrl(path) : 'file:///' + path.replace(/\\/g, '/')) || ''
+  videoUrl.value = 'http://127.0.0.1:8765/media?path=' + encodeURIComponent(path)
   imageUrl.value = ''
   objects.value = []
   timeline.value = []
@@ -430,7 +430,7 @@ async function openFromRoute(): Promise<void> {
   videoPath.value = params.get('video') || sessionStorage.getItem('editor_video_path') || videoPath.value
   if (videoPath.value) {
     const api = window.yoloStudio
-    videoUrl.value = (api?.mediaUrl ? await api.mediaUrl(videoPath.value) : 'file:///' + videoPath.value.replace(/\\/g, '/')) || ''
+    videoUrl.value = 'http://127.0.0.1:8765/media?path=' + encodeURIComponent(videoPath.value)
   }
   if (taskId.value) void loadTimeline()
 }

@@ -114,6 +114,24 @@ app.add_middleware(
 )
 
 
+@app.get("/media")
+async def media(path: str):
+    """Serve local media for <video>/<img> preview (file:// is unreliable)."""
+    from fastapi import HTTPException
+    from fastapi.responses import FileResponse
+
+    from app.utils import media_http
+
+    resolved = media_http.resolve_media_path(path, [config.root, config.projects_dir])
+    if resolved is None:
+        raise HTTPException(status_code=404, detail="file not found")
+    return FileResponse(
+        resolved,
+        media_type=media_http.guess_media_type(resolved),
+        filename=resolved.name,
+    )
+
+
 @app.get("/health")
 async def health() -> dict:
     return {

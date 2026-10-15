@@ -124,6 +124,18 @@ class ModelManager:
 
             runtime = registry.create(backend_type)
             weight = Path(model_path).resolve() if model_path else self.resolve_weight(cfg)
+            if not weight.exists() and cfg.backend == "yolo":
+                from app.model_manager.downloader import download_weight, _default_filename
+
+                try:
+                    weight = download_weight(
+                        cfg.id,
+                        self._models_dir / "examples" / "weights" / _default_filename(cfg.id),
+                    )
+                except Exception as dl_exc:  # noqa: BLE001
+                    raise FileNotFoundError(
+                        f"模型权重不存在：{weight}。请点「下载内置模型」，或手动放入 weights 目录。详情：{dl_exc}"
+                    ) from dl_exc
             try:
                 runtime.load_model(weight, cfg)
             except Exception as exc:  # noqa: BLE001
