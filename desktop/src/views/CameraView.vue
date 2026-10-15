@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import CanvasStage, { type BoxObject } from '../components/CanvasStage.vue'
 import ModelPicker from '../components/ModelPicker.vue'
 import EmptyState from '../components/EmptyState.vue'
@@ -13,6 +13,8 @@ interface ModelItem {
   loaded: boolean
   class_list?: Array<{ class_id: number; class_name: string; display_name: string }>
 }
+
+const embed = window.location.hash.includes('embed=1')
 
 const camSourceType = ref<'usb' | 'rtsp'>('usb')
 const camDeviceIndex = ref(0)
@@ -35,6 +37,8 @@ const errorMsg = ref('')
 const infoMsg = ref('')
 const camFrameCount = ref(0)
 const camDetectCount = ref(0)
+const zoom = ref(1)
+const stageRef = ref<HTMLElement | null>(null)
 
 function setErr(e: unknown): void {
   errorMsg.value = formatError(e)
@@ -50,11 +54,22 @@ async function loadModels(): Promise<void> {
   }
 }
 
-async function startCamera(): Promise<void> {
-  if (!selectedModels.value.length) {
-    errorMsg.value = t('workbench.noModel')
-    return
+async function syncModelsToStream(): Promise<void> {
+  if (!camStreamId.value) return
+  try {
+    await wsClient.request('camera.setModels', {
+      stream_id: camStreamId.value,
+      model_ids: selectedModels.value
+    })
+    infoMsg.value = selectedModels.value.length
+      ? `已切换模型：${selectedModels.value.join('、')}`
+      : '已关闭检测，仅预览'
+  } catch (e) {
+    setErr(e)
   }
+}
+
+async function startCamera(): Promise<void> {
   errorMsg.value = ''
   try {
     const payload: Record<string, unknown> = {
@@ -88,11 +103,7 @@ async function stopCamera(): Promise<void> {
 
 async function startRecord(): Promise<void> {
   const api = window.yoloStudio
-  if (!camStreamId.value) return
-  if (!api?.saveVideo) {
-    errorMsg.value = '请在桌面端中录制'
-    return
-  }
+  if (!camStreamId.value || !api?.saveVideo) return
   const out = (await api.saveVideo('录制_' + Date.now() + '.mp4')) || ''
   if (!out) return
   try {
@@ -105,7 +116,6 @@ async function startRecord(): Promise<void> {
     recordPath.value = out
     recordTaskId.value = String((resp.data as { task_id?: string }).task_id || '')
     recording.value = true
-    infoMsg.value = `录制中 ${Math.min(recordFps.value, maxFps.value)}fps → ${out}`
   } catch (e) {
     setErr(e)
   }
@@ -119,29 +129,38 @@ async function stopRecord(): Promise<void> {
       action: 'stop'
     })
     recording.value = false
-    const data = resp.data as {
-      output_path?: string
-      record_frames?: number
-      task_id?: string
-    }
+    const data = resp.data as { output_path?: string; task_id?: string; record_frames?: number }
     recordPath.value = data.output_path || recordPath.value
     recordTaskId.value = data.task_id || recordTaskId.value
-    infoMsg.value = `已保存录制 ${data.record_frames ?? 0} 帧 → ${data.output_path || recordPath.value}`
+    infoMsg.value = `已保存 ${data.record_frames ?? 0} 帧`
   } catch (e) {
     setErr(e)
   }
 }
 
 function openInEditor(): void {
-  if (!recordPath.value) {
-    errorMsg.value = '请先录制视频'
-    return
-  }
-  // pass task_id so editor loads existing results without re-detect
+  if (!recordPath.value) return
   sessionStorage.setItem('editor_video_path', recordPath.value)
   sessionStorage.setItem('editor_task_id', recordTaskId.value || '')
   void import('../router').then(({ router }) => router.push('/video-editor'))
 }
+
+function setZoom(z: number): void {
+  zoom.value = Math.min(4, Math.max(0.5, z))
+}
+
+function toggleFullscreen(): void {
+  const el = stageRef.value
+  if (!el) return
+  if (document.fullscreenElement) void document.exitFullscreen()
+  else void el.requestFullscreen()
+}
+
+function openPopout(): void {
+  void window.yoloStudio?.openCameraWindow?.()
+}
+
+const liveLabel = computed(() => (camLive.value ? t('backend.ready') : t('camera.empty')))
 
 onMounted(() => {
   void loadModels()
@@ -157,7 +176,6 @@ onMounted(() => {
   wsClient.on('stream.error', (msg: { data?: Record<string, unknown> }) => {
     errorMsg.value = formatError((msg.data as { message?: string })?.message || '摄像头错误')
     camLive.value = false
-    recording.value = false
   })
 })
 onUnmounted(() => {
@@ -166,134 +184,247 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="page camera-page">
-    <div class="page-header">
-      <h1 class="page-title">{{ t('workbench.cameraLive') }}</h1>
-      <div class="page-toolbar">
-        <select v-model="camSourceType" class="sel">
-          <option value="usb">{{ t('camera.usb') }}</option>
-          <option value="rtsp">{{ t('camera.rtsp') }}</option>
-        </select>
-        <input
-          v-if="camSourceType === 'usb'"
-          v-model.number="camDeviceIndex"
-          type="number"
-          class="num-input"
-          min="0"
-        />
-        <input
-          v-else
-          v-model="camRtspUrl"
-          class="text-input url"
-          :placeholder="t('camera.rtspPlaceholder')"
-        />
-        <button v-if="!camLive" type="button" class="primary" @click="startCamera">
-          {{ t('camera.open') }}
+  <div class="cam-shell" :class="{ embed }">
+    <!-- left: source + models -->
+    <aside v-if="!embed" class="cam-side left">
+      <section class="panel">
+        <div class="panel-head"><h3>{{ t('camera.usb') }} / {{ t('camera.rtsp') }}</h3></div>
+        <div class="panel-body col">
+          <select v-model="camSourceType" class="ctl">
+            <option value="usb">{{ t('camera.usb') }}</option>
+            <option value="rtsp">{{ t('camera.rtsp') }}</option>
+          </select>
+          <input
+            v-if="camSourceType === 'usb'"
+            v-model.number="camDeviceIndex"
+            type="number"
+            min="0"
+            class="ctl"
+          />
+          <input v-else v-model="camRtspUrl" class="ctl" :placeholder="t('camera.rtspPlaceholder')" />
+          <button type="button" class="primary" :disabled="camLive" @click="startCamera">
+            {{ t('camera.open') }}
+          </button>
+          <button type="button" class="danger" :disabled="!camLive" @click="stopCamera">
+            {{ t('camera.close') }}
+          </button>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h3>{{ t('workbench.modelSelect') }}</h3>
+          <span class="hint">可不选；运行中可热切换</span>
+        </div>
+        <div class="panel-body">
+          <ModelPicker
+            v-model:selected="selectedModels"
+            :models="models"
+            compact
+            @update:selected="() => { if (camLive) void syncModelsToStream() }"
+          />
+          <button type="button" class="ghost mini" :disabled="!camLive" @click="syncModelsToStream">
+            应用到摄像头
+          </button>
+        </div>
+      </section>
+    </aside>
+
+    <!-- center: monitor -->
+    <main ref="stageRef" class="cam-stage">
+      <div class="stage-toolbar">
+        <button type="button" class="ghost mini" @click="setZoom(zoom - 0.2)">−</button>
+        <span class="num">{{ Math.round(zoom * 100) }}%</span>
+        <button type="button" class="ghost mini" @click="setZoom(zoom + 0.2)">+</button>
+        <button type="button" class="ghost mini" @click="setZoom(1)">复位</button>
+        <span class="spacer" />
+        <button type="button" class="ghost mini" @click="toggleFullscreen">
+          {{ t('camera.fullscreen') }}
         </button>
-        <button v-else type="button" class="danger" @click="stopCamera">
-          {{ t('camera.close') }}
+        <button v-if="!embed" type="button" class="ghost mini" @click="openPopout">
+          {{ t('camera.popout') }}
         </button>
-        <button v-if="camLive && !recording" type="button" class="primary" @click="startRecord">
-          ● {{ t('camera.recordStart') }}
-        </button>
-        <button v-if="recording" type="button" class="danger" @click="stopRecord">
-          ■ {{ t('camera.recordStop') }}
-        </button>
-        <label class="lbl">{{ t('camera.recordFps') }}</label>
-        <input v-model.number="recordFps" type="number" min="1" :max="maxFps" class="num-input" />
-        <span class="muted">≤ {{ maxFps }} fps</span>
-        <button v-if="recordPath && !recording" type="button" @click="openInEditor">
-          {{ t('camera.openEditor') }}
-        </button>
+        <span class="status-pill" :class="{ on: camLive }">{{ liveLabel }}</span>
       </div>
-    </div>
+      <div class="stage-frame" :style="{ transform: `scale(${zoom})` }">
+        <CanvasStage
+          v-if="imageUrl"
+          :image-url="imageUrl"
+          :objects="objects"
+          :selected-id="selectedId"
+          @select="(id) => (selectedId = id)"
+        />
+        <EmptyState v-else icon="⬡" :title="t('workbench.cameraLive')" :description="t('camera.empty')" />
+      </div>
+    </main>
 
-    <div class="sub">
-      <ModelPicker v-model:selected="selectedModels" :models="models" compact />
-      <label class="lbl">{{ t('workbench.skipFrame') }}</label>
-      <input v-model.number="skipFrame" type="number" min="1" class="num-input" />
-      <label class="lbl">{{ t('workbench.boxPersistence') }}</label>
-      <input v-model.number="boxPersistence" type="number" min="1" class="num-input" />
-      <span v-if="camLive" class="muted num">
-        {{ t('camera.frame') }} {{ camFrameCount }} · {{ t('camera.detect') }} {{ camDetectCount }}
-        <template v-if="recording"> · ●REC</template>
-      </span>
-    </div>
+    <!-- right: params + record -->
+    <aside v-if="!embed" class="cam-side right">
+      <section class="panel">
+        <div class="panel-head"><h3>{{ t('workbench.params') }}</h3></div>
+        <div class="panel-body col">
+          <label>{{ t('workbench.skipFrame') }}</label>
+          <input v-model.number="skipFrame" type="number" min="1" class="ctl" />
+          <label>{{ t('workbench.boxPersistence') }}</label>
+          <input v-model.number="boxPersistence" type="number" min="1" class="ctl" />
+          <label>{{ t('camera.recordFps') }}</label>
+          <input v-model.number="recordFps" type="number" min="1" :max="maxFps" class="ctl" />
+          <span class="hint">≤ {{ maxFps }} fps</span>
+        </div>
+      </section>
+      <section class="panel">
+        <div class="panel-head"><h3>{{ t('camera.recordStart') }}</h3></div>
+        <div class="panel-body col">
+          <button v-if="!recording" type="button" class="primary" :disabled="!camLive" @click="startRecord">
+            ● {{ t('camera.recordStart') }}
+          </button>
+          <button v-else type="button" class="danger" @click="stopRecord">
+            ■ {{ t('camera.recordStop') }}
+          </button>
+          <button v-if="recordPath && !recording" type="button" @click="openInEditor">
+            {{ t('camera.openEditor') }}
+          </button>
+          <div class="hint num">
+            {{ t('camera.frame') }} {{ camFrameCount }} · {{ t('camera.detect') }} {{ camDetectCount }}
+          </div>
+        </div>
+      </section>
+    </aside>
 
-    <p v-if="errorMsg" class="err-text">{{ errorMsg }}</p>
-    <p v-if="infoMsg" class="muted-line">{{ infoMsg }}</p>
-
-    <div class="stage">
-      <CanvasStage
-        v-if="imageUrl"
-        :image-url="imageUrl"
-        :objects="objects"
-        :selected-id="selectedId"
-        @select="(id) => (selectedId = id)"
-      />
-      <EmptyState v-else icon="⬡" :title="t('workbench.cameraLive')" :description="t('camera.empty')" />
-    </div>
+    <p v-if="errorMsg && !embed" class="err">{{ errorMsg }}</p>
+    <p v-if="infoMsg && !embed" class="info">{{ infoMsg }}</p>
   </div>
 </template>
 
 <style scoped>
-.camera-page {
+.cam-shell {
+  display: grid;
+  grid-template-columns: 240px 1fr 240px;
+  grid-template-rows: 1fr auto;
+  gap: 10px;
+  padding: 10px;
   height: 100%;
+  min-height: 0;
 }
-.sub {
+.cam-shell.embed {
+  grid-template-columns: 1fr;
+  padding: 0;
+}
+.cam-side {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  overflow: auto;
+  grid-row: 1 / 3;
+}
+.cam-side.right {
+  grid-column: 3;
+}
+.cam-stage {
+  grid-column: 2;
+  grid-row: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--bg-canvas);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+.cam-shell.embed .cam-stage {
+  grid-column: 1;
+  border: none;
+  border-radius: 0;
+}
+.stage-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: var(--bg-chrome);
+  border-bottom: 1px solid var(--border);
+}
+.spacer {
+  flex: 1;
+}
+.status-pill {
+  font-size: var(--text-xs);
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--bg-inset);
+  color: var(--text-muted);
+}
+.status-pill.on {
+  background: var(--success-soft);
+  color: var(--success);
+}
+.stage-frame {
+  flex: 1;
+  min-height: 0;
+  transform-origin: center center;
+  transition: transform 150ms var(--ease);
+}
+.panel {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+.panel-head {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
   display: flex;
   align-items: center;
   gap: 8px;
-  flex-wrap: wrap;
 }
-.sel,
-.num-input,
-.text-input {
-  height: 28px;
+.panel-head h3 {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+.panel-body {
+  padding: 10px 12px;
+}
+.col {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.ctl {
+  height: 30px;
   border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: var(--bg-panel);
-  color: var(--text-primary);
+  border-radius: 6px;
   padding: 0 8px;
-  font-size: var(--text-sm);
+  background: var(--bg-inset);
+  color: var(--text-primary);
 }
-.num-input {
-  width: 64px;
+.hint {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
 }
-.url {
-  width: 200px;
+.mini {
+  padding: 3px 8px;
+  font-size: 11px;
 }
-.lbl {
-  color: var(--text-secondary);
-  font-size: var(--text-sm);
-}
-.chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: var(--text-sm);
-  padding: 2px 8px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-}
-.err-text {
+.err {
+  grid-column: 1 / -1;
   color: var(--danger);
   margin: 0;
   font-size: var(--text-sm);
 }
-.muted-line,
-.muted {
+.info {
+  grid-column: 1 / -1;
+  color: var(--success);
   margin: 0;
-  color: var(--text-secondary);
   font-size: var(--text-sm);
 }
-.stage {
-  flex: 1;
-  min-height: 360px;
-  display: flex;
-}
-.stage :deep(.canvas-wrap),
-.stage :deep(.empty-state) {
-  flex: 1;
+@media (max-width: 1100px) {
+  .cam-shell {
+    grid-template-columns: 200px 1fr;
+  }
+  .cam-side.right {
+    display: none;
+  }
 }
 </style>

@@ -232,6 +232,25 @@ ipcMain.handle('dialog:selectModelFile', async () => {
   return result.filePaths[0]
 })
 
+ipcMain.handle('window:openCamera', () => {
+  const win = new BrowserWindow({
+    width: 960,
+    height: 640,
+    title: '摄像头预览',
+    autoHideMenuBar: true,
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false
+    }
+  })
+  const base =
+    process.env.ELECTRON_RENDERER_URL ||
+    `file://${join(__dirname, '../renderer/index.html')}`
+  void win.loadURL(`${base}#/camera?embed=1`)
+})
+
 ipcMain.handle('dialog:selectImage', async () => {
   const win = BrowserWindow.getFocusedWindow()
   if (!win) return null

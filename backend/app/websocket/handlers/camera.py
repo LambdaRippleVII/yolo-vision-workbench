@@ -164,7 +164,34 @@ def register_camera_handlers(hub: WebSocketHub, model_manager, task_manager: Tas
             )
         return make_error("camera.record", "BAD_REQUEST", "action must be start|stop", id_=msg.get("id"))
 
+    async def on_set_models(msg: dict[str, Any], ctx: ConnectionContext) -> dict[str, Any]:
+        data = msg.get("data") or {}
+        stream_id = data.get("stream_id")
+        session = sessions.get(str(stream_id)) if stream_id else None
+        if not session:
+            return make_error("camera.setModels", "NOT_FOUND", f"stream not found: {stream_id}", id_=msg.get("id"))
+        model_ids = [str(m) for m in (data.get("model_ids") or [])]
+        # ensure runtimes exist for new models
+        for mid in model_ids:
+            if mid not in model_manager._loaded:
+                try:
+                    model_manager.load(mid)
+                except Exception as exc:  # noqa: BLE001
+                    return make_error(
+                        "camera.setModels",
+                        "MODEL_LOAD_FAILED",
+                        f"{mid}: {exc}",
+                        id_=msg.get("id"),
+                    )
+        current = session.set_model_ids(model_ids)
+        return make_message(
+            "camera.setModels",
+            {"ok": True, "stream_id": stream_id, "model_ids": current},
+            id_=msg.get("id"),
+        )
+
     hub.register("camera.open", on_open)
     hub.register("camera.close", on_close)
     hub.register("camera.status", on_status)
     hub.register("camera.record", on_record)
+    hub.register("camera.setModels", on_set_models)

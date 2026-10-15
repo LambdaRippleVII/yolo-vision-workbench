@@ -89,6 +89,8 @@ export default {
   'camera.rtspPlaceholder': 'rtsp://...',
   'camera.open': '打开摄像头',
   'camera.close': '关闭',
+  'camera.fullscreen': '全屏',
+  'camera.popout': '独立窗口',
   'camera.recordFps': '录制帧率',
   'camera.recordStart': '开始录制',
   'camera.recordStop': '停止录制',

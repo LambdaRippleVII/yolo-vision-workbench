@@ -73,6 +73,11 @@ class StreamSession:
             "fps": self.record_fps or 20.0,
         }
 
+    def set_model_ids(self, model_ids: list[str]) -> list[str]:
+        """Hot-swap detection models while stream is running (empty = preview only)."""
+        self.model_ids = list(model_ids or [])
+        return list(self.model_ids)
+
     def stop(self) -> None:
         self._stop.set()
         if self._thread:
@@ -118,6 +123,11 @@ class StreamSession:
 
                 if is_detect and self.model_ids:
                     try:
+                        runtimes = {}
+                        for mid in self.model_ids:
+                            if mid not in self._model_manager._loaded:
+                                self._model_manager.load(mid)
+                            runtimes[mid] = self._model_manager._loaded[mid]
                         result = pipeline_engine.execute(
                             session,
                             frame,

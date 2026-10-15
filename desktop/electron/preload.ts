@@ -37,6 +37,7 @@ const api = {
     ipcRenderer.on('menu:action', listener)
     return () => ipcRenderer.removeListener('menu:action', listener)
   },
+  openCameraWindow: (): Promise<void> => ipcRenderer.invoke('window:openCamera'),
   selectImage: (): Promise<string | null> => ipcRenderer.invoke('dialog:selectImage'),
   selectModelFile: (): Promise<string | null> => ipcRenderer.invoke('dialog:selectModelFile'),
   selectVideo: (): Promise<string | null> => ipcRenderer.invoke('dialog:selectVideo'),
