@@ -268,7 +268,11 @@ watch(() => route.path, () => {
         <section class="aside-section">
           <h3 class="aside-section-title">{{ t('ws.health') }}</h3>
           <div class="aside-section-body">
-            <button type="button" @click="onPing">{{ t('ws.ping') }}</button>
+            <button type="button" class="primary" @click="onPing">{{ t('ws.ping') }}</button>
+            <div class="field-row">
+              <span class="field-label">延迟</span>
+              <span class="field-value num">{{ pingMs !== null ? pingMs + ' ms' : '—' }}</span>
+            </div>
           </div>
         </section>
       </aside>

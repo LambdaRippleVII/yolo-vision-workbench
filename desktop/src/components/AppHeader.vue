@@ -86,7 +86,10 @@ const wsLabel = computed(() => {
         <span class="status-dot" />
         {{ t('ws.label') }}：{{ wsLabel }}
       </span>
-      <span v-if="pingMs !== null" class="status-chip num">{{ pingMs }} ms</span>
+      <!-- latency folded into title tooltip only; never adds a new chip -->
+      <span class="latency-inline num" :title="pingMs !== null ? `心跳 ${pingMs}ms` : ''">
+        {{ pingMs !== null ? `${pingMs} ms` : '' }}
+      </span>
     </div>
 
     <button
