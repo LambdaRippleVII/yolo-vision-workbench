@@ -248,7 +248,12 @@ ipcMain.handle('window:openCamera', () => {
   const base =
     process.env.ELECTRON_RENDERER_URL ||
     `file://${join(__dirname, '../renderer/index.html')}`
-  void win.loadURL(`${base}#/camera?embed=1`)
+  void win.loadURL(`${base}#/camera-popout`)
+})
+
+ipcMain.handle('window:setAlwaysOnTop', (_e, flag: boolean) => {
+  const win = BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0]
+  win?.setAlwaysOnTop(Boolean(flag))
 })
 
 ipcMain.handle('dialog:selectImage', async () => {

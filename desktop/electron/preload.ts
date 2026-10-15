@@ -38,6 +38,7 @@ const api = {
     return () => ipcRenderer.removeListener('menu:action', listener)
   },
   openCameraWindow: (): Promise<void> => ipcRenderer.invoke('window:openCamera'),
+  setAlwaysOnTop: (flag: boolean): Promise<void> => ipcRenderer.invoke('window:setAlwaysOnTop', flag),
   selectImage: (): Promise<string | null> => ipcRenderer.invoke('dialog:selectImage'),
   selectModelFile: (): Promise<string | null> => ipcRenderer.invoke('dialog:selectModelFile'),
   selectVideo: (): Promise<string | null> => ipcRenderer.invoke('dialog:selectVideo'),

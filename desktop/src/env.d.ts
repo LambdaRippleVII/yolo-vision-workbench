@@ -37,6 +37,7 @@ interface YoloStudioBridge {
   onBackendLog: (cb: (e: { level: string; source: string; message: string }) => void) => () => void
   onMenuAction?: (cb: (payload: { action: string }) => void) => () => void
   openCameraWindow?: () => Promise<void>
+  setAlwaysOnTop?: (flag: boolean) => Promise<void>
   selectImage?: () => Promise<string | null>
   selectModelFile?: () => Promise<string | null>
   selectVideo?: () => Promise<string | null>

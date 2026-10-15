@@ -2,6 +2,7 @@ import { createRouter, createWebHashHistory } from 'vue-router'
 import ImageDetectView from '../views/ImageDetectView.vue'
 import VideoEditorView from '../views/VideoEditorView.vue'
 import CameraView from '../views/CameraView.vue'
+import CameraPopoutView from '../views/CameraPopoutView.vue'
 import ProjectsView from '../views/ProjectsView.vue'
 import ModelsView from '../views/ModelsView.vue'
 import DatasetsView from '../views/DatasetsView.vue'
@@ -32,6 +33,7 @@ export const router = createRouter({
     },
     { path: '/video-editor', name: 'video-editor', component: VideoEditorView },
     { path: '/camera', name: 'camera', component: CameraView },
+    { path: '/camera-popout', name: 'camera-popout', component: CameraPopoutView },
     { path: '/projects', name: 'projects', component: ProjectsView },
     {
       path: '/models',

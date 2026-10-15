@@ -102,6 +102,11 @@ async function stopCamera(): Promise<void> {
   } finally {
     camLive.value = false
     camStreamId.value = ''
+    imageUrl.value = ''
+    objects.value = []
+    selectedId.value = null
+    camFrameCount.value = 0
+    camDetectCount.value = 0
   }
 }
 
@@ -154,7 +159,8 @@ function setZoom(z: number): void {
 }
 
 function toggleFullscreen(): void {
-  const el = stageRef.value
+  const el =
+    (stageRef.value?.querySelector('.stage-frame') as HTMLElement | null) || stageRef.value
   if (!el) return
   if (document.fullscreenElement) void document.exitFullscreen()
   else void el.requestFullscreen()
