@@ -125,8 +125,39 @@ def register_model_handlers(hub: WebSocketHub, model_manager) -> None:
             id_=msg.get("id"),
         )
 
+    async def on_import(msg: dict[str, Any], ctx: ConnectionContext) -> dict[str, Any]:
+        data = msg.get("data") or {}
+        weight_path = data.get("weight_path")
+        if not weight_path:
+            return make_error("model.import", "BAD_REQUEST", "weight_path required", id_=msg.get("id"))
+        try:
+            from app.model_manager.importer import import_local_model
+
+            result = import_local_model(
+                str(weight_path),
+                models_dir=model_manager._models_dir,
+                name=data.get("name"),
+                backend=str(data.get("backend") or "yolo"),
+                task=str(data.get("task") or "detect"),
+            )
+            model_manager.refresh()
+            model_manager.init_class_lists()
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("model.import failed")
+            return make_error("model.import", "INTERNAL", str(exc), id_=msg.get("id"))
+        item = model_manager.get_config(result["model_id"])
+        payload = item.public_dict() if item else result
+        payload["class_list"] = model_manager.list_models()
+        # prefer fresh class_list from list_models
+        for m in model_manager.list_models():
+            if m["model_id"] == result["model_id"]:
+                payload = m
+                break
+        return make_message("model.import", {"ok": True, "model": payload}, id_=msg.get("id"))
+
     hub.register("model.list", on_list)
     hub.register("model.load", on_load)
     hub.register("model.unload", on_unload)
     hub.register("model.refresh", on_refresh)
     hub.register("model.classDisplay", on_class_display)
+    hub.register("model.import", on_import)

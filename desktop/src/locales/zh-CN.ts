@@ -137,6 +137,7 @@ export default {
   'projects.namePlaceholder': '新项目名称',
 
   'models.title': '模型管理',
+  'models.import': '添加模型',
   'models.local': '本地模型',
   'models.repository': '模型仓库',
   'models.id': '模型 ID',

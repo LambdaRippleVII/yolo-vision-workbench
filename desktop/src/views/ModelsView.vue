@@ -37,6 +37,7 @@ const colorDraft = ref<Record<string, string>>({})
 const colorMode = ref<'auto' | 'manual'>('auto')
 const saving = ref(false)
 const filterText = ref('')
+const infoMsg = ref('')
 
 const selected = computed(() => models.value.find((m) => m.model_id === selectedId.value) ?? null)
 
@@ -98,6 +99,32 @@ async function saveDisplay(): Promise<void> {
   }
 }
 
+async function importModel(): Promise<void> {
+  const api = window.yoloStudio
+  if (!api?.selectModelFile) {
+    errorMsg.value = '请在桌面端中选择模型文件'
+    return
+  }
+  const path = await api.selectModelFile()
+  if (!path) return
+  errorMsg.value = ''
+  try {
+    const resp = await wsClient.request('model.import', {
+      weight_path: path,
+      name: path.split(/[\\/]/).pop()?.replace(/\.[^.]+$/, '')
+    })
+    const m = (resp.data as { model?: { model_id: string; class_list?: unknown[] } }).model
+    await loadList()
+    if (m) {
+      selectedId.value = m.model_id
+      resetDraft()
+      infoMsg.value = `已导入 ${m.model_id}（${(m.class_list || []).length} 类）`
+    }
+  } catch (e) {
+    errorMsg.value = formatError(e)
+  }
+}
+
 onMounted(() => {
   void loadList()
   wsClient.on('client.open', () => void loadList())
@@ -115,6 +142,9 @@ onMounted(() => {
         <button type="button" :class="{ primary: tab === 'repository' }" @click="tab = 'repository'">
           {{ t('models.repository') }}
         </button>
+        <button type="button" class="primary" @click="importModel">
+          {{ t('models.import') }}
+        </button>
         <button type="button" class="ghost" :disabled="loading" @click="loadList">
           {{ t('action.refresh') }}
         </button>
@@ -122,6 +152,7 @@ onMounted(() => {
     </div>
 
     <p v-if="errorMsg" class="err-text">{{ errorMsg }}</p>
+    <p v-if="infoMsg" class="info-text">{{ infoMsg }}</p>
 
     <div class="grid">
       <div class="panel">
@@ -221,6 +252,11 @@ onMounted(() => {
 }
 .err-text {
   color: var(--danger);
+  margin: 0;
+  font-size: var(--text-sm);
+}
+.info-text {
+  color: var(--success);
   margin: 0;
   font-size: var(--text-sm);
 }
