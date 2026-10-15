@@ -31,16 +31,33 @@ def class_color(cfg: ModelConfig, class_name: str, class_index: int) -> str:
     return auto_color_for(class_index)
 
 
+def _resolve_names(cfg: ModelConfig, runtime_classes: list[str] | None) -> list[str]:
+    """Full class name list: runtime > YAML classes > display-map keys."""
+    names: list[str] = []
+    if runtime_classes:
+        names.extend(runtime_classes)
+    if cfg.classes:
+        names.extend(cfg.classes)
+    # display map only covers mapped subset; do not use as sole source unless nothing else
+    if not names and cfg.class_display:
+        names.extend(cfg.class_display.keys())
+    # unique, keep order
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for n in names:
+        if n not in seen:
+            seen.add(n)
+            ordered.append(n)
+    return ordered
+
+
 def class_entries(cfg: ModelConfig, runtime_classes: list[str] | None = None) -> list[dict[str, Any]]:
     """Build UI-facing class list.
 
-    Prefer full runtime class names (e.g. 80 COCO). Fall back to YAML.
-    Logic uses original class_name; display_name only affects rendering.
+    Always expose every known class_name.
+    display_name = class_display[name] if mapped else name (原名原样显示).
     """
-    names = runtime_classes if runtime_classes else list(cfg.classes)
-    if not names:
-        names = list(cfg.class_display.keys())
-
+    names = _resolve_names(cfg, runtime_classes)
     entries: list[dict[str, Any]] = []
     for idx, name in enumerate(names):
         entries.append(
