@@ -28,7 +28,7 @@
   },
   "build": {
     "appId": "com.lambdaripple.yolovisionworkbench",
-    "productName": "YOLO Vision Workbench",
+    "productName": "YOLO 视觉工作台",
     "icon": "build/icon.ico",
     "directories": {
       "output": "release",
@@ -76,7 +76,7 @@
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
-      "shortcutName": "YOLO Vision Workbench"
+      "shortcutName": "YOLO 视觉工作台"
     }
   }
 }

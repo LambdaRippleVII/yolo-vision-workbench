@@ -1,6 +1,6 @@
 /** 简体中文文案（全量）。术语表见 docs/LOCALIZATION.md */
 export default {
-  'app.name': 'YOLO Vision Workbench',
+  'app.name': 'YOLO 视觉工作台',
   'splash.starting': '正在启动后端服务…',
   'splash.restarting': '正在重启后端服务…',
   'splash.hint': '首次启动可能需要几秒钟',
@@ -197,7 +197,7 @@ export default {
   'settings.projectsDir': '项目目录',
   'settings.modelsDir': '模型目录',
   'settings.exportDir': '导出目录',
-  'settings.aboutText': 'YOLO Vision Workbench · 专业 AI 视觉工程平台',
+  'settings.aboutText': 'YOLO 视觉工作台 · 专业 AI 视觉工程平台',
 
   'status.pending': '等待中',
   'status.running': '进行中',

@@ -7,7 +7,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } fr
 import { join, resolve, basename } from 'path'
 import { ProcessSupervisor } from './backend/supervisor'
 
-const PRODUCT_NAME = 'YOLO Vision Workbench'
+const PRODUCT_NAME = 'YOLO 视觉工作台'
 
 const HOST = process.env.YOLO_STUDIO_HOST || '127.0.0.1'
 const PORT = Number(process.env.YOLO_STUDIO_PORT || 8765)
