@@ -29,6 +29,7 @@
   "build": {
     "appId": "com.lambdaripple.yolovisionworkbench",
     "productName": "YOLO Vision Workbench",
+    "icon": "build/icon.ico",
     "directories": {
       "output": "release",
       "buildResources": "build"

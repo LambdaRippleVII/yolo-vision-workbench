@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#223244"/>
+      <stop offset="1" stop-color="#1B2A3A"/>
+    </linearGradient>
+  </defs>
+  <!-- tile -->
+  <rect x="64" y="64" width="896" height="896" rx="200" fill="url(#tile)"/>
+  <!-- subtle inset border -->
+  <rect x="64" y="64" width="896" height="896" rx="200" fill="none" stroke="#2F3E50" stroke-width="2"/>
+
+  <!-- detection brackets -->
+  <g fill="none" stroke="#2F6FED" stroke-width="28" stroke-linecap="round" stroke-linejoin="round">
+    <!-- top-left -->
+    <path d="M220 340 V240 H320"/>
+    <!-- top-right -->
+    <path d="M704 240 H804 V340"/>
+    <!-- bottom-right -->
+    <path d="M804 684 V784 H704"/>
+    <!-- bottom-left -->
+    <path d="M320 784 H220 V684"/>
+  </g>
+
+  <!-- lens / iris -->
+  <circle cx="512" cy="512" r="148" fill="none" stroke="#8FA6BF" stroke-width="22"/>
+  <circle cx="512" cy="512" r="96" fill="#172230"/>
+  <circle cx="512" cy="512" r="62" fill="#2F6FED" opacity="0.9"/>
+  <circle cx="488" cy="488" r="22" fill="#3ECFDB"/>
+</svg>
