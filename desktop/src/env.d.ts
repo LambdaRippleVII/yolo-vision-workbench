@@ -24,6 +24,32 @@ interface YoloStudioBridge {
     message?: string
     reusedPid?: number
   }>
+  getRuntimeSetupStatus?: () => Promise<{
+    managed: boolean
+    phase: 'initializing' | 'ready' | 'failed'
+    step: string
+    message: string
+    error: string
+    details: string[]
+  }>
+  retryRuntimeSetup?: () => Promise<{
+    managed: boolean
+    phase: 'initializing' | 'ready' | 'failed'
+    step: string
+    message: string
+    error: string
+    details: string[]
+  }>
+  onRuntimeSetupStatus?: (
+    cb: (status: {
+      managed: boolean
+      phase: 'initializing' | 'ready' | 'failed'
+      step: string
+      message: string
+      error: string
+      details: string[]
+    }) => void
+  ) => () => void
   onBackendStatus: (
     cb: (s: {
       status: string

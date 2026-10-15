@@ -1,6 +1,6 @@
 [project]
 name = "yolo-vision-workbench-backend"
-version = "0.2.4"
+version = "0.2.5"
 description = "YOLO Vision Workbench Python backend service"
 requires-python = ">=3.11"
 dependencies = [

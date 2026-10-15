@@ -7,6 +7,7 @@ import { appendFileSync, copyFileSync, existsSync, mkdirSync, readFileSync, read
 import { pathToFileURL } from 'url'
 import { join, resolve, basename } from 'path'
 import { ProcessSupervisor } from './backend/supervisor'
+import { RuntimeSetup, type RuntimeSetupStatus } from './runtime-setup'
 
 const PRODUCT_NAME = 'YOLO 视觉工作台'
 
@@ -188,17 +189,79 @@ function buildAppMenu(): void {
 
 const supervisor = new ProcessSupervisor({
   rootDir: repoRoot(),
-  // Always use the packaged environment in releases, even when a developer
-  // machine has YOLO_STUDIO_PYTHON set to a separate interpreter.
-  pythonPath: app.isPackaged
-    ? join(process.resourcesPath, 'python-embed', 'runtime', 'python.exe')
-    : undefined,
   host: HOST,
   port: PORT,
   version: app.getVersion(),
   attachMode: ATTACH,
   autoPort: true
 })
+
+let runtimeSetup: RuntimeSetup | null = null
+let backendStartPromise: Promise<void> | null = null
+
+function currentRuntimeStatus(): RuntimeSetupStatus {
+  return (
+    runtimeSetup?.getStatus() ?? {
+      managed: app.isPackaged,
+      phase: app.isPackaged ? 'initializing' : 'ready',
+      step: app.isPackaged ? '准备运行环境' : '开发环境',
+      message: app.isPackaged ? '正在检查随包 Python 运行环境…' : '开发环境由当前 Python 配置提供。',
+      error: '',
+      details: []
+    }
+  )
+}
+
+function initializeRuntimeSetup(): void {
+  const userDataDir = app.getPath('userData')
+  runtimeSetup = new RuntimeSetup({
+    managed: app.isPackaged,
+    bundledRuntimeDir: join(process.resourcesPath || '', 'python-embed', 'runtime'),
+    userDataDir,
+    backendDir: join(repoRoot(), 'backend')
+  })
+  runtimeSetup.on('status', (status: RuntimeSetupStatus) => {
+    logMain(`[runtime] ${status.phase} · ${status.step} · ${status.message}`)
+    const win = BrowserWindow.getAllWindows()[0]
+    win?.webContents.send('runtime:status', status)
+  })
+  supervisor.setPythonPath(
+    app.isPackaged ? join(userDataDir, 'python-runtime', 'python.exe') : undefined
+  )
+}
+
+async function startBackendWithRuntime(restart = false): Promise<void> {
+  if (backendStartPromise) return backendStartPromise
+
+  backendStartPromise = (async () => {
+    try {
+      if (restart) await supervisor.stop()
+      preparePackagedData()
+      if (runtimeSetup) await runtimeSetup.initialize()
+      supervisor.setPythonPath(
+        app.isPackaged
+          ? join(app.getPath('userData'), 'python-runtime', 'python.exe')
+          : undefined
+      )
+      await supervisor.start()
+      const status = supervisor.getStatus()
+      if (status.status !== 'ready' && status.status !== 'reused') {
+        throw new Error(status.message || '本地服务启动失败，请查看日志后重试。')
+      }
+      await runtimeSetup?.markReady('Python 推理环境和本地服务已就绪。')
+      logMain(`supervisor started status=${JSON.stringify(status)}`)
+    } catch (error) {
+      await runtimeSetup?.markFailed(error)
+      logMain(`failed to prepare runtime or start backend: ${String(error)}`)
+      console.error('failed to prepare runtime or start backend', error)
+      throw error
+    }
+  })().finally(() => {
+    backendStartPromise = null
+  })
+
+  return backendStartPromise
+}
 
 supervisor.on('log', (entry: { level: string; source: string; message: string }) => {
   logMain(`[${entry.level}] ${entry.source}: ${entry.message}`)
@@ -251,9 +314,17 @@ function createWindow(): void {
 ipcMain.handle('backend:getStatus', () => supervisor.getStatus())
 ipcMain.handle('backend:getWsUrl', () => supervisor.getWsUrl())
 ipcMain.handle('backend:restart', async () => {
-  await supervisor.stop()
-  await supervisor.start()
+  await startBackendWithRuntime(true)
   return supervisor.getStatus()
+})
+ipcMain.handle('runtime:getStatus', () => currentRuntimeStatus())
+ipcMain.handle('runtime:retry', async () => {
+  try {
+    await startBackendWithRuntime(true)
+  } catch {
+    /* The current status includes the detailed error for the renderer. */
+  }
+  return currentRuntimeStatus()
 })
 
 ipcMain.handle('dialog:selectModelFile', async () => {
@@ -405,17 +476,11 @@ ipcMain.handle(
 app.whenReady().then(async () => {
   app.setName(PRODUCT_NAME)
   buildAppMenu()
+  initializeRuntimeSetup()
   logMain('app ready, starting supervisor')
   createWindow()
 
-  try {
-    preparePackagedData()
-    await supervisor.start()
-    logMain(`supervisor started status=${JSON.stringify(supervisor.getStatus())}`)
-  } catch (err) {
-    logMain(`failed to start backend: ${String(err)}`)
-    console.error('failed to start backend', err)
-  }
+  void startBackendWithRuntime().catch(() => undefined)
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
@@ -429,5 +494,6 @@ app.on('window-all-closed', () => {
 })
 
 app.on('before-quit', () => {
+  runtimeSetup?.terminate()
   void supervisor.stop()
 })

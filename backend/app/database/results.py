@@ -6,6 +6,7 @@ import json
 from typing import Any
 
 from app.database.connection import get_conn
+from app.utils.image_io import open_video_capture
 
 
 def list_task_frames(task_id: str, *, limit: int = 500) -> list[dict[str, Any]]:
@@ -82,7 +83,7 @@ def extract_video_frame_jpeg(video_path: str, frame_id: int, quality: int = 85) 
     """Return JPEG bytes of a single video frame (for replay preview)."""
     import cv2
 
-    cap = cv2.VideoCapture(video_path)
+    cap = open_video_capture(video_path)
     if not cap.isOpened():
         return None
     try:

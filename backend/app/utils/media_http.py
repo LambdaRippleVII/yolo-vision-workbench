@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import mimetypes
 from pathlib import Path
-from urllib.parse import unquote
 
 
 def guess_media_type(path: Path) -> str:
@@ -14,7 +13,9 @@ def guess_media_type(path: Path) -> str:
 
 def resolve_media_path(raw: str, allowed_roots: list[Path]) -> Path | None:
     """Only serve files under allowed roots (project / models / temp)."""
-    p = Path(unquote(str(raw))).expanduser()
+    # FastAPI has already decoded query parameters; decoding again corrupts
+    # filenames that contain literal percent sequences such as "%20".
+    p = Path(str(raw)).expanduser()
     try:
         p = p.resolve()
     except Exception:  # noqa: BLE001

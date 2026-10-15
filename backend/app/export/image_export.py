@@ -9,9 +9,14 @@ from typing import Any
 import cv2
 from loguru import logger
 
-from app.export.draw import draw_objects
-from app.utils.image_io import imread_unicode, imwrite_unicode
 from app.database import results as results_db
+from app.export.draw import draw_objects
+from app.utils.image_io import (
+    imread_unicode,
+    imwrite_unicode,
+    open_video_capture,
+    video_open_error_message,
+)
 
 
 def save_annotated_image(
@@ -71,9 +76,9 @@ def save_frame_images(
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    cap = cv2.VideoCapture(str(video_path))
+    cap = open_video_capture(video_path)
     if not cap.isOpened():
-        raise FileNotFoundError(f"cannot open video: {video_path}")
+        raise FileNotFoundError(video_open_error_message(video_path))
 
     saved: list[str] = []
     try:

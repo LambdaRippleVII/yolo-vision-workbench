@@ -13,8 +13,9 @@ from typing import Any, Callable
 import cv2
 from loguru import logger
 
-from app.export.draw import draw_objects
 from app.database.connection import get_conn
+from app.export.draw import draw_objects
+from app.utils.image_io import open_video_capture, video_open_error_message
 
 
 def load_frame_objects(task_id: str) -> dict[int, list[dict[str, Any]]]:
@@ -57,9 +58,9 @@ def export_video(
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    cap = cv2.VideoCapture(str(source_video))
+    cap = open_video_capture(source_video)
     if not cap.isOpened():
-        raise FileNotFoundError(f"cannot open video: {source_video}")
+        raise FileNotFoundError(video_open_error_message(source_video))
 
     src_fps = float(cap.get(cv2.CAP_PROP_FPS) or 25.0)
     out_fps = fps if fps and fps > 0 else src_fps

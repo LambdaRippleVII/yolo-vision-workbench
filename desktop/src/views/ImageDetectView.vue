@@ -76,6 +76,10 @@ function setErr(e: unknown): void {
   errorMsg.value = formatError(e)
 }
 
+function onModelLibraryChanged(): void {
+  void loadModels()
+}
+
 async function loadModels(): Promise<void> {
   try {
     const resp = await wsClient.request('model.list', {})
@@ -120,7 +124,7 @@ async function downloadBuiltinModel(modelId: string): Promise<boolean> {
 async function ensureModelLoaded(modelId: string): Promise<boolean> {
   const model = models.value.find((item) => item.model_id === modelId)
   if (model?.runtime_available === false) {
-    errorMsg.value = '当前安装包缺少 YOLO 推理组件，请安装包含 CPU 推理环境的新版安装包。'
+    errorMsg.value = 'YOLO 推理组件尚未准备好。请关闭并重新打开软件，在首次启动初始化提示中重试安装。'
     return false
   }
   if (model?.weights_available === false) {
@@ -686,6 +690,7 @@ onMounted(() => {
   window.addEventListener('paste', handlePaste)
   window.addEventListener('dragover', onGlobalDragOver)
   window.addEventListener('drop', onGlobalDrop)
+  window.addEventListener('yolo-models-changed', onModelLibraryChanged)
   wsClient.on('client.open', () => {
     errorMsg.value = ''
     void loadModels()
@@ -770,6 +775,7 @@ onUnmounted(() => {
   window.removeEventListener('paste', handlePaste)
   window.removeEventListener('dragover', onGlobalDragOver)
   window.removeEventListener('drop', onGlobalDrop)
+  window.removeEventListener('yolo-models-changed', onModelLibraryChanged)
 })
 </script>
 

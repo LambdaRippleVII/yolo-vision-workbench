@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from app.database import results as results_db
+from app.utils.image_io import open_video_capture, video_open_error_message
 from app.websocket.protocol import make_error, make_message
 from app.websocket.server import ConnectionContext, WebSocketHub
 
@@ -88,9 +89,14 @@ def register_result_handlers(hub: WebSocketHub) -> None:
 
         from app.utils.image_io import imread_unicode  # noqa: F401
 
-        cap = cv2.VideoCapture(str(video_path))
+        cap = open_video_capture(str(video_path))
         if not cap.isOpened():
-            return make_error("result.thumbs", "MEDIA_NOT_FOUND", f"cannot open video: {video_path}", id_=msg.get("id"))
+            return make_error(
+                "result.thumbs",
+                "MEDIA_NOT_FOUND",
+                video_open_error_message(str(video_path)),
+                id_=msg.get("id"),
+            )
         thumbs = []
         try:
             for fid in frame_ids[:200]:

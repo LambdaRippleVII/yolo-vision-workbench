@@ -77,6 +77,10 @@ async function loadList(): Promise<void> {
   }
 }
 
+function onModelLibraryChanged(): void {
+  void loadList()
+}
+
 function resetDraft(): void {
   const map: Record<string, string> = {}
   const colors: Record<string, string> = {}
@@ -163,6 +167,7 @@ async function importModel(): Promise<void> {
 onMounted(() => {
   void loadList()
   stopClientOpen = wsClient.on('client.open', () => void loadList())
+  window.addEventListener('yolo-models-changed', onModelLibraryChanged)
   stopDownloadProgress = wsClient.on('model.download.progress', (msg) => {
     const data = msg.data as { model_id?: string; message?: string } | undefined
     if (data?.model_id === downloadingModelId.value && data.message) infoMsg.value = data.message
@@ -172,6 +177,7 @@ onMounted(() => {
 onUnmounted(() => {
   stopClientOpen?.()
   stopDownloadProgress?.()
+  window.removeEventListener('yolo-models-changed', onModelLibraryChanged)
 })
 </script>
 
@@ -197,9 +203,9 @@ onUnmounted(() => {
 
     <p v-if="errorMsg" class="err-text">{{ errorMsg }}</p>
     <p v-if="infoMsg" class="info-text">{{ infoMsg }}</p>
-    <p class="hint-text">首次使用内置模型时，点对应模型旁的「下载」获取权重；下载后保存在本机，可离线使用。</p>
+    <p class="hint-text">发行版首次启动时会自动下载内置模型权重；失败的模型可在这里单独重试。下载后保存在本机，可离线使用。</p>
     <p v-if="yoloRuntimeMissing" class="runtime-warning">
-      当前发行包缺少 YOLO 推理组件（PyTorch / Ultralytics），模型暂时无法推理。请安装包含 CPU 推理环境的新版安装包。
+      YOLO 推理组件尚未准备好。请重启软件并在首次启动初始化提示中重试安装；如果仍失败，可查看初始化日志。
     </p>
 
     <div class="grid">

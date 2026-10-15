@@ -79,37 +79,4 @@ async function ensurePip() {
 enableEmbeddedSitePackages()
 await ensurePip()
 
-const baseRequirements = resolve(backendDir, 'requirements', 'base.txt')
-
-console.log('正在为发行版安装基础服务依赖…')
-runPython(['-m', 'pip', 'install', '--disable-pip-version-check', '-r', baseRequirements])
-
-console.log('正在为发行版安装 CPU 版 PyTorch…')
-runPython(['-m', 'pip', 'uninstall', '--yes', 'torch', 'torchvision'])
-runPython([
-  '-m',
-  'pip',
-  'install',
-  '--disable-pip-version-check',
-  '--index-url',
-  'https://download.pytorch.org/whl/cpu',
-  '--extra-index-url',
-  'https://pypi.org/simple',
-  'torch>=2.4.0',
-  'torchvision>=0.19.0'
-])
-
-console.log('正在为发行版安装 Ultralytics 推理组件…')
-runPython([
-  '-m',
-  'pip',
-  'install',
-  '--disable-pip-version-check',
-  'ultralytics>=8.4.0'
-])
-
-console.log('检查随包 Python 的 YOLO 运行组件…')
-runPython([
-  '-c',
-  'import torch, ultralytics; assert torch.version.cuda is None, f"Expected CPU-only PyTorch, found CUDA {torch.version.cuda}"; print(f"YOLO CPU runtime ready: torch={torch.__version__}, ultralytics={ultralytics.__version__}")'
-])
+console.log('随包 Python 已准备好；后端依赖和 YOLO CPU 推理组件将在软件首次启动时安装到用户目录。')

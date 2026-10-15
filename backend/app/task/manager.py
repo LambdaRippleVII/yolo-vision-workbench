@@ -12,6 +12,7 @@ from app.database import dao
 from app.inference.pipeline import pipeline_engine
 from app.inference.session import InferenceSession
 from app.task.base import Task, TaskStatus, TaskType
+from app.utils.image_io import open_video_capture, video_open_error_message
 
 ProgressCB = Callable[[dict[str, Any]], None]
 
@@ -205,9 +206,10 @@ class TaskManager:
                 box_persistence = int(task.params.get("box_persistence") or 5)
                 box_persistence = min(box_persistence, skip_frame)
 
-                cap = cv2.VideoCapture(str(media_path))
+                cap = open_video_capture(media_path)
                 if not cap.isOpened():
-                    raise FileNotFoundError(f"cannot open video: {media_path}")
+                    cap.release()
+                    raise FileNotFoundError(video_open_error_message(media_path))
 
                 total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
                 fps = float(cap.get(cv2.CAP_PROP_FPS) or 0) or 25.0
@@ -298,6 +300,12 @@ class TaskManager:
                     self._emit("progress", task, frame=frame_payload if push else None)
 
                     frame_id += 1
+
+                if frame_id == 0:
+                    cap.release()
+                    raise RuntimeError(
+                        f"无法从视频读取任何画面：{media_path}。文件可能损坏或编码不受支持。"
+                    )
 
                 cap.release()
                 task.result_ref = f"video:{media_path}"

@@ -87,6 +87,10 @@ export class ProcessSupervisor extends EventEmitter {
     }
   }
 
+  setPythonPath(pythonPath?: string): void {
+    this.opts.pythonPath = pythonPath
+  }
+
   private setStatus(status: BackendStatus, message?: string): void {
     this.status = status
     if (message !== undefined) this.message = message

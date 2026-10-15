@@ -2,15 +2,80 @@
 
 from __future__ import annotations
 
+import asyncio
+import base64
+import math
+from pathlib import Path
 from typing import Any
 
 from loguru import logger
 
+from app.utils.image_io import open_video_capture, video_open_error_message
 from app.websocket.protocol import make_error, make_message
 from app.websocket.server import ConnectionContext, WebSocketHub
 
 
+def _inspect_video(media_path: str) -> dict[str, Any]:
+    import cv2
+
+    path = Path(media_path).expanduser()
+    if not path.is_file():
+        raise FileNotFoundError(f"视频文件不存在或不可访问：{path}")
+
+    capture = open_video_capture(path)
+    if not capture.isOpened():
+        capture.release()
+        raise RuntimeError(video_open_error_message(path))
+    try:
+        frame_count = int(capture.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+        fps = float(capture.get(cv2.CAP_PROP_FPS) or 0)
+        width = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH) or 0)
+        height = int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT) or 0)
+        ok, frame = capture.read()
+        if not ok or frame is None:
+            raise RuntimeError("视频已打开，但无法解码首帧；文件可能损坏或编码不受支持。")
+
+        height, width = frame.shape[:2]
+        max_dimension = 1440
+        scale = min(1.0, max_dimension / max(height, width))
+        if scale < 1.0:
+            frame = cv2.resize(frame, (max(1, round(width * scale)), max(1, round(height * scale))))
+        encoded, buffer = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), 86])
+        if not encoded:
+            raise RuntimeError("视频首帧已读取，但无法生成预览图。")
+
+        duration = frame_count / fps if frame_count > 0 and fps > 0 and math.isfinite(fps) else None
+        return {
+            "width": int(width),
+            "height": int(height),
+            "fps": fps if math.isfinite(fps) else 0,
+            "frame_count": frame_count,
+            "duration": duration,
+            "poster_url": f"data:image/jpeg;base64,{base64.b64encode(buffer.tobytes()).decode('ascii')}",
+        }
+    finally:
+        capture.release()
+
+
 def register_video_handlers(hub: WebSocketHub, task_manager) -> None:
+    async def on_inspect(msg: dict[str, Any], ctx: ConnectionContext) -> dict[str, Any]:
+        data = msg.get("data") or {}
+        media_path = data.get("media_path")
+        if not media_path:
+            return make_error("video.inspect", "BAD_REQUEST", "media_path is required", id_=msg.get("id"))
+        try:
+            preview = await asyncio.to_thread(_inspect_video, str(media_path))
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("video preview failed path={} error={}", media_path, exc)
+            return make_error(
+                "video.inspect",
+                "VIDEO_PREVIEW_FAILED",
+                str(exc),
+                id_=msg.get("id"),
+                detail={"media_path": str(media_path)},
+            )
+        return make_message("video.inspect", {"ok": True, **preview}, id_=msg.get("id"))
+
     async def on_start(msg: dict[str, Any], ctx: ConnectionContext) -> dict[str, Any]:
         data = msg.get("data") or {}
         media_path = data.get("media_path")
@@ -83,6 +148,7 @@ def register_video_handlers(hub: WebSocketHub, task_manager) -> None:
             id_=msg.get("id"),
         )
 
+    hub.register("video.inspect", on_inspect)
     hub.register("video.start", on_start)
     hub.register("video.cancel", on_cancel)
     hub.register("export.video", on_export)

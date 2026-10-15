@@ -23,11 +23,22 @@ interface ModelItem {
   class_list?: Array<{ class_id: number; class_name: string; display_name: string }>
 }
 
+interface VideoInspectInfo {
+  width: number
+  height: number
+  fps: number
+  frame_count: number
+  duration: number | null
+  poster_url: string
+}
+
 const taskId = ref('')
 const videoPath = ref('')
 const videoUrl = ref('')
-const videoPreviewState = ref<'idle' | 'loading' | 'ready' | 'error'>('idle')
+const videoPreviewState = ref<'idle' | 'loading' | 'ready' | 'fallback' | 'error'>('idle')
 const videoPreviewError = ref('')
+const videoPosterUrl = ref('')
+const videoNativeFailed = ref(false)
 const labelTemplate = ref('{id}:{class}')
 const timeline = ref<FrameItem[]>([])
 const currentFrameId = ref(0)
@@ -58,6 +69,11 @@ const draggingPlayhead = ref(false)
 let videoPreviewRequestId = 0
 let videoSelectionId = 0
 let videoPreviewTimer: number | undefined
+let videoHttpFallbackUrl = ''
+let videoHttpFallbackRequestId = 0
+let videoOpenCvFallbackRequestId = 0
+let videoInspectRequestId = 0
+let videoInspectPromise: Promise<VideoInspectInfo> | null = null
 let stopDownloadProgress: (() => void) | undefined
 let stopTaskDone: (() => void) | undefined
 let stopClientOpen: (() => void) | undefined
@@ -205,8 +221,101 @@ function previewErrorMessage(message: string): void {
   clearVideoPreviewTimer()
   videoPreviewState.value = 'error'
   videoPreviewError.value = message
-  errorMsg.value = `视频预览失败：${message}。请检查文件是否损坏或转为 H.264 MP4；也可以点「开始推理」查看后端解码结果。`
+  errorMsg.value = `视频预览失败：${message}。请检查文件权限和编码格式；建议转为 H.264 MP4 后重试。`
   infoMsg.value = ''
+}
+
+function requestVideoInspection(path: string, requestId: number): Promise<VideoInspectInfo> {
+  if (videoInspectRequestId === requestId && videoInspectPromise) return videoInspectPromise
+
+  videoInspectRequestId = requestId
+  videoInspectPromise = wsClient
+    .request('video.inspect', { media_path: path }, 60_000)
+    .then((response) => {
+      const info = response.data as VideoInspectInfo
+      if (!info?.poster_url) throw new Error('后端没有返回可用的视频首帧。')
+      if (requestId === videoPreviewRequestId) {
+        videoPosterUrl.value = info.poster_url
+        if (videoPreviewState.value === 'loading') {
+          infoMsg.value = `已读取首帧：${info.width}×${info.height}${info.fps > 0 ? ` · ${info.fps.toFixed(2)} FPS` : ''}`
+        }
+      }
+      return info
+    })
+    .catch((error) => {
+      if (requestId === videoPreviewRequestId) {
+        videoInspectError = formatError(error)
+        videoInspectPromise = null
+      }
+      throw error
+    })
+  return videoInspectPromise
+}
+
+let videoInspectError = ''
+
+function retryVideoInspectionAfterReconnect(): void {
+  const path = videoPath.value
+  const requestId = videoPreviewRequestId
+  if (!path || videoPosterUrl.value) return
+
+  void requestVideoInspection(path, requestId)
+    .then(() => {
+      if (requestId !== videoPreviewRequestId || videoPreviewState.value !== 'error') return
+      videoNativeFailed.value = true
+      videoPreviewState.value = 'fallback'
+      videoPreviewError.value = '播放器无法播放此视频，但已通过本地解码显示首帧。'
+      errorMsg.value = ''
+      infoMsg.value = '可以继续点击「开始推理」。需要播放视频时，请转换为 H.264 MP4。'
+    })
+    .catch(() => {
+      /* Keep the visible preview error; the user can retry after the backend reconnects. */
+    })
+}
+
+function armVideoPreviewTimeout(path: string, requestId: number): void {
+  clearVideoPreviewTimer()
+  videoPreviewTimer = window.setTimeout(() => {
+    if (requestId !== videoPreviewRequestId || videoPreviewState.value !== 'loading') return
+    if (videoUrl.value.startsWith('file:') && videoHttpFallbackUrl && videoHttpFallbackRequestId !== requestId) {
+      switchToHttpPreview(path, requestId, '本地文件预览超时')
+      return
+    }
+    void fallbackToOpenCvPreview(path, '等待播放器读取视频元数据超时', requestId)
+  }, 10_000)
+}
+
+function switchToHttpPreview(path: string, requestId: number, reason: string): void {
+  if (requestId !== videoPreviewRequestId || !videoHttpFallbackUrl) return
+  videoHttpFallbackRequestId = requestId
+  videoPreviewState.value = 'loading'
+  videoPreviewError.value = ''
+  videoNativeFailed.value = false
+  infoMsg.value = `${reason}，正在切换到后端流媒体预览…`
+  videoUrl.value = videoHttpFallbackUrl
+  armVideoPreviewTimeout(path, requestId)
+}
+
+async function fallbackToOpenCvPreview(path: string, reason: string, requestId: number): Promise<void> {
+  if (requestId !== videoPreviewRequestId || videoOpenCvFallbackRequestId === requestId) return
+  videoOpenCvFallbackRequestId = requestId
+  clearVideoPreviewTimer()
+  videoPreviewState.value = 'loading'
+  infoMsg.value = '播放器预览没有成功，正在尝试用本地解码读取首帧…'
+
+  try {
+    await requestVideoInspection(path, requestId)
+    if (requestId !== videoPreviewRequestId) return
+    videoNativeFailed.value = true
+    videoPreviewState.value = 'fallback'
+    videoPreviewError.value = `播放器无法显示此视频：${reason}`
+    errorMsg.value = ''
+    infoMsg.value = '已通过本地解码显示首帧；可以继续点击「开始推理」。需要播放视频时，请转换为 H.264 MP4。'
+  } catch (error) {
+    if (requestId !== videoPreviewRequestId) return
+    const detail = videoInspectError || formatError(error)
+    previewErrorMessage(`${reason}；后端也无法解码首帧：${detail}`)
+  }
 }
 
 async function loadVideoPreview(path: string): Promise<void> {
@@ -214,22 +323,40 @@ async function loadVideoPreview(path: string): Promise<void> {
   clearVideoPreviewTimer()
   videoPreviewState.value = 'loading'
   videoPreviewError.value = ''
-  infoMsg.value = `已选择视频：${path.split(/[\\/]/).pop() || path}，正在读取视频信息…`
+  videoPosterUrl.value = ''
+  videoNativeFailed.value = false
+  videoHttpFallbackUrl = ''
+  videoHttpFallbackRequestId = 0
+  videoOpenCvFallbackRequestId = 0
+  videoInspectError = ''
+  videoInspectRequestId = requestId
+  videoInspectPromise = null
+  infoMsg.value = `已选择视频：${path.split(/[\\/]/).pop() || path}，正在读取视频信息和首帧…`
+
+  const inspection = requestVideoInspection(path, requestId)
+  void inspection.catch(() => undefined)
 
   try {
     const api = window.yoloStudio
+    let localUrl = ''
+    try {
+      localUrl = (await api?.mediaUrl?.(path)) || ''
+    } catch {
+      /* Fall back to the local backend media route below. */
+    }
     let baseUrl = 'http://127.0.0.1:8765'
-    if (api?.getWsUrl) {
-      const wsUrl = await api.getWsUrl()
-      baseUrl = wsUrl.replace(/^wss:/i, 'https:').replace(/^ws:/i, 'http:').replace(/\/ws\/?$/i, '')
+    try {
+      const wsUrl = await api?.getWsUrl?.()
+      if (wsUrl) {
+        baseUrl = wsUrl.replace(/^wss:/i, 'https:').replace(/^ws:/i, 'http:').replace(/\/ws\/?$/i, '')
+      }
+    } catch {
+      /* A selected local file can still be opened directly by Electron. */
     }
     if (requestId !== videoPreviewRequestId) return
-    videoUrl.value = `${baseUrl}/media?path=${encodeURIComponent(path)}`
-    videoPreviewTimer = window.setTimeout(() => {
-      if (requestId === videoPreviewRequestId && videoPreviewState.value === 'loading') {
-        previewErrorMessage('等待视频元数据超时；请检查后端连接、文件权限和视频编码格式')
-      }
-    }, 15_000)
+    videoHttpFallbackUrl = `${baseUrl}/media?path=${encodeURIComponent(path)}`
+    videoUrl.value = localUrl || videoHttpFallbackUrl
+    armVideoPreviewTimeout(path, requestId)
   } catch (e) {
     if (requestId === videoPreviewRequestId) previewErrorMessage(formatError(e))
   }
@@ -250,14 +377,23 @@ function onVideoLoadedMetadata(ev: Event): void {
   const video = ev.currentTarget as HTMLVideoElement
   if (video.getAttribute('src') !== videoUrl.value) return
   if (!video.videoWidth || !video.videoHeight) {
-    previewErrorMessage('视频没有有效画面信息，文件可能损坏')
+    void fallbackToOpenCvPreview(videoPath.value, '播放器没有读取到有效画面信息', videoPreviewRequestId)
     return
   }
+  infoMsg.value = `视频已加载：${video.videoWidth}×${video.videoHeight} · ${formatDuration(video.duration)}`
+}
+
+function onVideoLoadedData(ev: Event): void {
+  const video = ev.currentTarget as HTMLVideoElement
+  if (video.getAttribute('src') !== videoUrl.value) return
   clearVideoPreviewTimer()
   videoPreviewState.value = 'ready'
   videoPreviewError.value = ''
+  videoNativeFailed.value = false
   errorMsg.value = ''
-  infoMsg.value = `视频已加载：${video.videoWidth}×${video.videoHeight} · ${formatDuration(video.duration)}`
+  if (video.videoWidth && video.videoHeight) {
+    infoMsg.value = `视频已加载：${video.videoWidth}×${video.videoHeight} · ${formatDuration(video.duration)}`
+  }
 }
 
 function onVideoError(ev: Event): void {
@@ -272,7 +408,12 @@ function onVideoError(ev: Event): void {
     4: '浏览器不支持此视频格式或编码，建议转为 H.264 MP4'
   }
   const reason = (code && reasons[code]) || '播放器无法加载此视频'
-  previewErrorMessage(message ? `${reason}（${message}）` : reason)
+  const detail = message ? `${reason}（${message}）` : reason
+  if (videoUrl.value.startsWith('file:') && videoHttpFallbackUrl && videoHttpFallbackRequestId !== videoPreviewRequestId) {
+    switchToHttpPreview(videoPath.value, videoPreviewRequestId, detail)
+    return
+  }
+  void fallbackToOpenCvPreview(videoPath.value, detail, videoPreviewRequestId)
 }
 
 async function startDetect(): Promise<void> {
@@ -291,7 +432,7 @@ async function startDetect(): Promise<void> {
       let model = models.value.find((item) => item.model_id === modelId)
       if (!model) continue
       if (model.runtime_available === false) {
-        throw new Error('当前安装包缺少 YOLO 推理组件，请安装包含 CPU 推理环境的新版安装包。')
+        throw new Error('YOLO 推理组件尚未准备好。请重启软件并在首次启动初始化提示中重试安装。')
       }
       if (model.weights_available === false) {
         if (!model.downloadable) {
@@ -582,6 +723,10 @@ function clearDrag(): void {
   dragging.value = false
 }
 
+function onModelLibraryChanged(): void {
+  void loadModels()
+}
+
 async function handlePaste(ev: ClipboardEvent): Promise<void> {
   const items = ev.clipboardData?.files
   if (!items?.length) return
@@ -637,7 +782,9 @@ onMounted(() => {
     if (errorMsg.value.includes('通信未就绪')) errorMsg.value = ''
     void loadModels()
     if (taskId.value) void loadTimeline()
+    retryVideoInspectionAfterReconnect()
   })
+  window.addEventListener('yolo-models-changed', onModelLibraryChanged)
   window.addEventListener('dragenter', onWindowDragEnter)
   window.addEventListener('dragover', onWindowDragOver)
   window.addEventListener('dragleave', onWindowDragLeave)
@@ -669,6 +816,7 @@ onUnmounted(() => {
   window.removeEventListener('dragend', clearDrag)
   window.removeEventListener('drop', onWindowDrop)
   window.removeEventListener('paste', onWindowPaste)
+  window.removeEventListener('yolo-models-changed', onModelLibraryChanged)
   stopDownloadProgress?.()
   stopTaskDone?.()
   stopClientOpen?.()
@@ -741,25 +889,44 @@ onUnmounted(() => {
             @select="(id) => (selectedId = id)"
           />
           <video
-            v-else-if="videoUrl"
+            v-else-if="videoUrl && !videoNativeFailed"
             :key="videoUrl"
             class="video-preview"
             :src="videoUrl"
-            preload="metadata"
+            :poster="videoPosterUrl || undefined"
+            preload="auto"
             controls
             muted
             @loadedmetadata="onVideoLoadedMetadata"
+            @loadeddata="onVideoLoadedData"
             @error="onVideoError"
+          />
+          <img
+            v-else-if="videoNativeFailed && videoPosterUrl"
+            class="video-preview video-preview-poster"
+            :src="videoPosterUrl"
+            alt="视频首帧预览"
           />
           <div v-else-if="videoPath" class="video-placeholder">
             <span v-if="videoPreviewState === 'loading'">正在读取视频信息…</span>
             <span v-else-if="videoPreviewError">{{ videoPreviewError }}</span>
           </div>
           <EmptyState v-else icon="▶" :title="t('editor.title')" :description="t('editor.empty')" />
-          <div v-if="videoPreviewError && videoUrl" class="video-preview-error" role="alert">
-            <strong>视频预览失败</strong>
+          <div v-if="videoPreviewState === 'loading' && videoPath" class="video-preview-status" role="status" aria-live="polite">
+            <span class="video-preview-spinner" aria-hidden="true" />
+            <span>{{ infoMsg || '正在读取视频信息…' }}</span>
+          </div>
+          <div
+            v-if="videoPreviewError && videoPath"
+            class="video-preview-error"
+            :class="{ 'is-fallback': videoPreviewState === 'fallback' }"
+            role="alert"
+          >
+            <strong>{{ videoPreviewState === 'fallback' ? '播放器预览提示' : '视频预览失败' }}</strong>
             <span>{{ videoPreviewError }}</span>
-            <small>可尝试转为 H.264 MP4；也可以点击「开始推理」查看后端是否能解码。</small>
+            <small v-if="videoPreviewState === 'fallback'">已显示本地解码首帧；可以继续点「开始推理」。播放此视频时建议转换为 H.264 MP4。</small>
+            <small v-else>建议转换为 H.264 MP4 后重试。</small>
+            <button v-if="videoPreviewState === 'error'" type="button" @click="setVideo(videoPath)">重新读取视频</button>
           </div>
         </div>
       </section>
@@ -1082,6 +1249,35 @@ onUnmounted(() => {
   text-align: center;
   background: var(--bg-canvas);
 }
+.video-preview-status {
+  position: absolute;
+  z-index: 2;
+  left: 12px;
+  right: 12px;
+  bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--bg-panel) 94%, transparent);
+  font-size: var(--text-sm);
+}
+.video-preview-spinner {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 14px;
+  border: 2px solid var(--border-strong);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: video-preview-spin 0.85s linear infinite;
+}
+.video-preview-poster {
+  object-fit: contain;
+  padding: 16px;
+}
 .video-preview-error {
   position: absolute;
   z-index: 2;
@@ -1098,8 +1294,21 @@ onUnmounted(() => {
   background: color-mix(in srgb, var(--bg-panel) 94%, var(--danger));
   font-size: var(--text-sm);
 }
+.video-preview-error.is-fallback {
+  color: var(--warning);
+  background: var(--warning-soft);
+}
 .video-preview-error small {
   color: var(--text-secondary);
+}
+.video-preview-error button {
+  align-self: flex-start;
+  margin-top: 2px;
+}
+@keyframes video-preview-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 .grow {
   flex: 1;

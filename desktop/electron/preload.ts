@@ -18,10 +18,26 @@ export interface BackendLogEntry {
   message: string
 }
 
+export interface RuntimeSetupStatus {
+  managed: boolean
+  phase: 'initializing' | 'ready' | 'failed'
+  step: string
+  message: string
+  error: string
+  details: string[]
+}
+
 const api = {
   getBackendStatus: (): Promise<BackendStatus> => ipcRenderer.invoke('backend:getStatus'),
   getWsUrl: (): Promise<string> => ipcRenderer.invoke('backend:getWsUrl'),
   restartBackend: (): Promise<BackendStatus> => ipcRenderer.invoke('backend:restart'),
+  getRuntimeSetupStatus: (): Promise<RuntimeSetupStatus> => ipcRenderer.invoke('runtime:getStatus'),
+  retryRuntimeSetup: (): Promise<RuntimeSetupStatus> => ipcRenderer.invoke('runtime:retry'),
+  onRuntimeSetupStatus: (cb: (status: RuntimeSetupStatus) => void): (() => void) => {
+    const listener = (_: unknown, status: RuntimeSetupStatus) => cb(status)
+    ipcRenderer.on('runtime:status', listener)
+    return () => ipcRenderer.removeListener('runtime:status', listener)
+  },
   onBackendStatus: (cb: (status: BackendStatus) => void): (() => void) => {
     const listener = (_: unknown, status: BackendStatus) => cb(status)
     ipcRenderer.on('backend:status', listener)

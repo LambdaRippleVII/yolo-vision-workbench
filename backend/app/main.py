@@ -114,7 +114,7 @@ app.add_middleware(
 )
 
 
-@app.get("/media")
+@app.api_route("/media", methods=["GET", "HEAD"])
 async def media(path: str):
     """Serve local media for <video>/<img> preview (file:// is unreliable)."""
     from fastapi import HTTPException

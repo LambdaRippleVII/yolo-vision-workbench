@@ -5,12 +5,14 @@ from __future__ import annotations
 import base64
 import threading
 import time
+from pathlib import Path
 from typing import Any, Callable
 
 from loguru import logger
 
 from app.inference.pipeline import pipeline_engine
 from app.inference.session import InferenceSession
+from app.utils.image_io import open_video_capture, video_open_error_message
 
 
 class StreamSession:
@@ -94,8 +96,19 @@ class StreamSession:
 
 
         try:
-            self._cap = cv2.VideoCapture(self.source)
+            local_video_path: Path | None = None
+            if isinstance(self.source, str):
+                candidate = Path(self.source).expanduser()
+                if candidate.is_file():
+                    local_video_path = candidate
+                    self._cap = open_video_capture(candidate)
+                else:
+                    self._cap = cv2.VideoCapture(self.source)
+            else:
+                self._cap = cv2.VideoCapture(self.source)
             if not self._cap.isOpened():
+                if local_video_path is not None:
+                    raise RuntimeError(video_open_error_message(local_video_path))
                 raise RuntimeError(f"cannot open stream: {self.source}")
 
             runtimes = {}

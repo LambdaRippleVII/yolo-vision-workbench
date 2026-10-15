@@ -6,6 +6,7 @@ import SideNav from './components/SideNav.vue'
 import TopModeBar from './components/TopModeBar.vue'
 import BootSplash from './components/BootSplash.vue'
 import ConsoleDock from './components/ConsoleDock.vue'
+import StartupSetupOverlay from './components/StartupSetupOverlay.vue'
 import type { LogLine } from './components/ConsoleDock.vue'
 import { wsClient } from './api/ws'
 import type { Envelope } from './api/protocol'
@@ -13,6 +14,35 @@ import { t } from './locales'
 
 const route = useRoute()
 const router = useRouter()
+
+interface RuntimeSetupView {
+  managed: boolean
+  phase: 'initializing' | 'ready' | 'failed'
+  step: string
+  message: string
+  error: string
+  details: string[]
+}
+
+interface StartupModel {
+  model_id: string
+  name: string
+  downloadable?: boolean
+  weights_available?: boolean
+}
+
+interface StartupModelView {
+  visible: boolean
+  phase: 'idle' | 'checking' | 'downloading' | 'failed' | 'complete'
+  message: string
+  currentModelId: string
+  models: Array<{
+    model_id: string
+    name: string
+    state: 'waiting' | 'downloading' | 'failed' | 'ready'
+    error?: string
+  }>
+}
 
 const theme = ref<'light' | 'dark'>('light')
 const backend = ref<{
@@ -28,9 +58,33 @@ const pingMs = ref<number | null>(null)
 const logs = ref<LogLine[]>([])
 const consoleExpanded = ref(false)
 const projectLabel = ref('')
+const runtimeSetup = ref<RuntimeSetupView>({
+  managed: false,
+  phase: 'ready',
+  step: '开发环境',
+  message: '开发环境由当前 Python 配置提供。',
+  error: '',
+  details: []
+})
+const startupModels = ref<StartupModelView>({
+  visible: false,
+  phase: 'idle',
+  message: '',
+  currentModelId: '',
+  models: []
+})
+const setupRetrying = ref(false)
 let activeWsUrl = ''
 let wsUrlRequestId = 0
 let wsListenersRegistered = false
+let startupModelCheckStarted = false
+let stopRuntimeSetupStatus: (() => void) | undefined
+let stopStartupModelProgress: (() => void) | undefined
+const onProjectChanged = () => void refreshProjectLabel()
+
+function applyRuntimeSetupStatus(status: RuntimeSetupView): void {
+  runtimeSetup.value = { ...status, details: [...status.details] }
+}
 
 function applyBackendStatus(s: {
   status: string
@@ -72,6 +126,145 @@ function pushLog(level: string, source: string, message: string): void {
   if (logs.value.length > 300) logs.value.pop()
 }
 
+async function checkBuiltinModelsOnStartup(): Promise<void> {
+  if (!runtimeSetup.value.managed || startupModelCheckStarted || wsState.value !== 'connected') return
+  startupModelCheckStarted = true
+  startupModels.value = {
+    visible: true,
+    phase: 'checking',
+    message: '正在检查内置模型权重…',
+    currentModelId: '',
+    models: []
+  }
+
+  try {
+    const response = await wsClient.request('model.list', {}, 30_000)
+    const items = ((response.data as { models?: StartupModel[] }).models ?? []) as StartupModel[]
+    const missing = items.filter((model) => model.downloadable && model.weights_available === false)
+    if (!missing.length) {
+      startupModels.value = {
+        visible: false,
+        phase: 'idle',
+        message: '',
+        currentModelId: '',
+        models: []
+      }
+      return
+    }
+
+    startupModels.value = {
+      visible: true,
+      phase: 'downloading',
+      message: `发现 ${missing.length} 个内置模型缺少权重，正在自动下载…`,
+      currentModelId: missing[0]?.model_id || '',
+      models: missing.map((model) => ({
+        model_id: model.model_id,
+        name: model.name,
+        state: 'waiting'
+      }))
+    }
+    await downloadStartupModels(missing.map((model) => model.model_id))
+  } catch (error) {
+    startupModels.value = {
+      visible: true,
+      phase: 'failed',
+      message: `检查内置模型失败：${error instanceof Error ? error.message : String(error)}`,
+      currentModelId: '',
+      models: []
+    }
+    startupModelCheckStarted = false
+  }
+}
+
+async function downloadStartupModels(modelIds: string[]): Promise<void> {
+  if (!modelIds.length || setupRetrying.value) return
+  setupRetrying.value = true
+  startupModels.value = {
+    ...startupModels.value,
+    visible: true,
+    phase: 'downloading',
+    message: '正在下载缺少的内置模型权重…',
+    currentModelId: modelIds[0] || '',
+    models: startupModels.value.models.map((model) =>
+      modelIds.includes(model.model_id)
+        ? { ...model, state: 'waiting', error: undefined }
+        : model
+    )
+  }
+
+  try {
+    const response = await wsClient.request(
+      'model.downloadBuiltin',
+      { model_ids: modelIds },
+      30 * 60 * 1000
+    )
+    const results = (response.data as {
+      results?: Array<{ model_id: string; ok: boolean; error?: string }>
+    }).results ?? []
+    const byId = new Map(results.map((result) => [result.model_id, result]))
+    startupModels.value.models = startupModels.value.models.map((model) => {
+      if (!modelIds.includes(model.model_id)) return model
+      const result = byId.get(model.model_id)
+      return result?.ok
+        ? { ...model, state: 'ready', error: undefined }
+        : {
+            ...model,
+            state: 'failed',
+            error: result?.error || '后端没有返回下载结果。'
+          }
+    })
+    const failures = startupModels.value.models.filter((model) => model.state === 'failed')
+    if (failures.length) {
+      startupModels.value.phase = 'failed'
+      startupModels.value.message = `${failures.length} 个模型下载失败，可单独重试或稍后在「模型管理」中补齐。`
+    } else {
+      startupModels.value.phase = 'complete'
+      startupModels.value.message = '所有缺失的内置模型权重已下载完成。'
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    startupModels.value.models = startupModels.value.models.map((model) =>
+      modelIds.includes(model.model_id) ? { ...model, state: 'failed', error: message } : model
+    )
+    startupModels.value.phase = 'failed'
+    startupModels.value.message = `模型下载中断：${message}`
+  } finally {
+    setupRetrying.value = false
+    window.dispatchEvent(new Event('yolo-models-changed'))
+  }
+}
+
+function retryStartupModels(): void {
+  const failedIds = startupModels.value.models
+    .filter((model) => model.state === 'failed')
+    .map((model) => model.model_id)
+  if (failedIds.length) {
+    void downloadStartupModels(failedIds)
+    return
+  }
+  startupModelCheckStarted = false
+  void checkBuiltinModelsOnStartup()
+}
+
+function retryStartupModel(modelId: string): void {
+  void downloadStartupModels([modelId])
+}
+
+function continueStartup(): void {
+  startupModels.value.visible = false
+}
+
+function onStartupModelProgress(message: Envelope): void {
+  if (startupModels.value.phase !== 'downloading') return
+  const data = message.data as { model_id?: string; message?: string } | undefined
+  if (!data?.model_id || !data.message) return
+  startupModels.value.currentModelId = data.model_id
+  startupModels.value.message = data.message
+  startupModels.value.models = startupModels.value.models.map((model) =>
+    model.model_id === data.model_id ? { ...model, state: 'downloading' } : model
+  )
+}
+
 function connectWs(url: string): void {
   if (activeWsUrl === url) return
   activeWsUrl = url
@@ -81,6 +274,7 @@ function connectWs(url: string): void {
       wsState.value = 'connected'
       pushLog('INFO', 'ws', '通信已连接')
       void checkHealth()
+      void checkBuiltinModelsOnStartup()
     })
     wsClient.on('client.close', () => {
       wsState.value = 'disconnected'
@@ -101,6 +295,7 @@ function connectWs(url: string): void {
     })
     wsClient.on('project.open', () => void refreshProjectLabel())
     wsClient.on('project.create', () => void refreshProjectLabel())
+    stopStartupModelProgress = wsClient.on('model.download.progress', onStartupModelProgress)
     wsListenersRegistered = true
   }
   wsClient.connect(url)
@@ -153,10 +348,27 @@ async function onRestart(): Promise<void> {
   const api = window.yoloStudio
   if (!api) return
   pushLog('WARN', 'supervisor', '正在重启后端服务…')
-  const st = await api.restartBackend()
-  applyBackendStatus(st)
-  await connectToBackend()
-  pushLog('INFO', 'supervisor', `后端服务状态：${st.status}`)
+  try {
+    const st = await api.restartBackend()
+    applyBackendStatus(st)
+    await connectToBackend()
+    pushLog('INFO', 'supervisor', `后端服务状态：${st.status}`)
+  } catch (error) {
+    pushLog('ERROR', 'supervisor', error instanceof Error ? error.message : String(error))
+  }
+}
+
+async function retryRuntimeSetup(): Promise<void> {
+  const api = window.yoloStudio
+  if (!api?.retryRuntimeSetup || setupRetrying.value) return
+  setupRetrying.value = true
+  try {
+    applyRuntimeSetupStatus(await api.retryRuntimeSetup())
+  } catch (error) {
+    pushLog('ERROR', 'runtime', error instanceof Error ? error.message : String(error))
+  } finally {
+    setupRetrying.value = false
+  }
 }
 
 async function bootstrap(): Promise<void> {
@@ -165,6 +377,9 @@ async function bootstrap(): Promise<void> {
 
   const api = window.yoloStudio
   if (api) {
+    stopRuntimeSetupStatus = api.onRuntimeSetupStatus?.(applyRuntimeSetupStatus)
+    const runtimeStatus = await api.getRuntimeSetupStatus?.()
+    if (runtimeStatus) applyRuntimeSetupStatus(runtimeStatus)
     api.onBackendStatus((s) => {
       const endpointChanged = backend.value.host !== s.host || backend.value.port !== s.port
       applyBackendStatus(s)
@@ -216,10 +431,12 @@ async function refreshProjectLabel(): Promise<void> {
 
 onMounted(() => {
   void bootstrap()
-  window.addEventListener('yolo-project-changed', () => void refreshProjectLabel())
+  window.addEventListener('yolo-project-changed', onProjectChanged)
 })
 onUnmounted(() => {
-  window.removeEventListener('yolo-project-changed', () => void refreshProjectLabel())
+  window.removeEventListener('yolo-project-changed', onProjectChanged)
+  stopRuntimeSetupStatus?.()
+  stopStartupModelProgress?.()
   wsClient.close()
 })
 watch(() => route.path, () => {
@@ -308,6 +525,16 @@ watch(() => route.path, () => {
       v-model:expanded="consoleExpanded"
       :logs="logs"
       @clear="logs = []"
+    />
+
+    <StartupSetupOverlay
+      :runtime="runtimeSetup"
+      :models="startupModels"
+      :retrying="setupRetrying"
+      @retry-runtime="retryRuntimeSetup"
+      @retry-models="retryStartupModels"
+      @retry-model="retryStartupModel"
+      @continue="continueStartup"
     />
   </div>
 </template>
