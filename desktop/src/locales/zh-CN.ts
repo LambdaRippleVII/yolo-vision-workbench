@@ -105,7 +105,7 @@ export default {
   'workbench.imageDetect': '图片检测',
   'workbench.videoDetect': '视频检测',
   'workbench.cameraLive': '摄像头实时',
-  'workbench.canvasHint': '选择图片或文件夹开始检测',
+  'workbench.canvasHint': '选择图片或文件夹，再点「开始推理」',
   'workbench.noModel': '请先加载检测模型',
   'workbench.sessionMode': '识别模式',
   'workbench.modeTemp': '临时识别',
@@ -132,7 +132,7 @@ export default {
   'projects.name': '项目名称',
   'projects.path': '路径',
   'projects.lastOpened': '最后打开',
-  'projects.empty': '打开或新建项目以开始',
+  'projects.empty': '新建或打开一个项目，再开始识别',
   'projects.current': '当前',
   'projects.namePlaceholder': '新项目名称',
 
@@ -211,7 +211,7 @@ export default {
   'log.level.CRITICAL': '严重',
 
   'empty.default': '暂无内容',
-  'empty.noResult': '选择模型与图片，点击「开始推理」',
+  'empty.noResult': '选择模型和图片后，点「开始推理」',
   'error.INTERNAL': '内部错误。请查看日志并重试',
   'error.MODEL_LOAD_FAILED': '模型加载失败。请检查权重文件与运行依赖',
   'error.BAD_REQUEST': '请求格式不正确。请重试或检查参数',

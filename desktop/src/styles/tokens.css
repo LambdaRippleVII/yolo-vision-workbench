@@ -23,14 +23,18 @@
   --space-4: 16px;
   --space-5: 20px;
   --space-6: 24px;
-  --space-8: 32px;
+    --space-8: 32px;
+  --space-group: 12px;
+  --space-section: 24px;
 
   --radius-sm: 4px;
   --radius-md: 8px;
   --radius-lg: 12px;
   --radius-xl: 14px;
 
-  --bg-app: #f3f5f8;
+    --bg-app: #f3f5f8;
+  --bg-chrome: #ffffff;
+  --bg-content: #f3f5f8;
   --bg-panel: #ffffff;
   --bg-workspace: #e9edf3;
   --bg-canvas: #e2e8f0;
@@ -78,7 +82,9 @@
 [data-theme='dark'] {
   color-scheme: dark;
 
-  --bg-app: #1c222b;
+    --bg-app: #1c222b;
+  --bg-chrome: #232b36;
+  --bg-content: #1c222b;
   --bg-panel: #232b36;
   --bg-workspace: #181e26;
   --bg-canvas: #12171e;
