@@ -1,6 +1,6 @@
 {
   "name": "yolo-vision-workbench-desktop",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "private": true,
   "description": "YOLO Vision Workbench desktop shell (Electron + Vue3)",
   "main": "out/main/index.js",
