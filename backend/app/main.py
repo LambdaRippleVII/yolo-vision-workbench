@@ -128,7 +128,6 @@ async def media(path: str):
     return FileResponse(
         resolved,
         media_type=media_http.guess_media_type(resolved),
-        filename=resolved.name,
     )
 
 

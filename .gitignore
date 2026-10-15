@@ -37,8 +37,8 @@ desktop/release/
 *.exe
 !docs/**/*.zip
 
-# bundled python runtime (build output)
-desktop/release/
+# bundled Python build input
+desktop/vendor/python-embed/runtime/
 
 # model weights (downloadable, large)
 *.pt

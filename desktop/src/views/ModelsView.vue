@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import EmptyState from '../components/EmptyState.vue'
 import { wsClient } from '../api/ws'
 import { formatError } from '../utils/errors'
@@ -21,6 +21,9 @@ interface ModelItem {
   task: string
   model_path: string
   loaded: boolean
+  weights_available?: boolean
+  downloadable?: boolean
+  runtime_available?: boolean
   class_list: ClassItem[]
   class_display?: Record<string, string>
   class_colors?: Record<string, string>
@@ -38,8 +41,14 @@ const colorMode = ref<'auto' | 'manual'>('auto')
 const saving = ref(false)
 const filterText = ref('')
 const infoMsg = ref('')
+const downloadingModelId = ref('')
+let stopDownloadProgress: (() => void) | undefined
+let stopClientOpen: (() => void) | undefined
 
 const selected = computed(() => models.value.find((m) => m.model_id === selectedId.value) ?? null)
+const yoloRuntimeMissing = computed(() =>
+  models.value.some((m) => m.backend === 'yolo' && m.runtime_available === false)
+)
 
 const visibleClasses = computed(() => {
   const list = selected.value?.class_list || []
@@ -99,22 +108,29 @@ async function saveDisplay(): Promise<void> {
   }
 }
 
-async function downloadBuiltin(): Promise<void> {
-  infoMsg.value = '正在拉取内置模型权重…'
+async function downloadBuiltin(modelId: string): Promise<void> {
+  if (downloadingModelId.value) return
+  const model = models.value.find((m) => m.model_id === modelId)
+  if (!model) return
+  downloadingModelId.value = modelId
+  infoMsg.value = `正在下载 ${model.name} 权重…`
   errorMsg.value = ''
   try {
-    const resp = await wsClient.request('model.downloadBuiltin', {})
+    const resp = await wsClient.request('model.downloadBuiltin', { model_ids: [modelId] }, 10 * 60 * 1000)
     const results = (resp.data as { results?: Array<{ model_id: string; ok: boolean; error?: string }> }).results || []
-    const failed = results.filter((r) => !r.ok)
+    const result = results.find((item) => item.model_id === modelId)
     await loadList()
-    if (failed.length) {
-      errorMsg.value =
-        '部分模型下载失败：' + failed.map((f) => `${f.model_id}（${f.error}）`).join('；')
+    if (!result?.ok) {
+      errorMsg.value = `模型权重下载失败：${result?.error || '后端没有返回下载结果'}`
+      infoMsg.value = ''
     } else {
-      infoMsg.value = `内置模型权重已就绪（${results.length}）`
+      infoMsg.value = `${model.name} 权重已下载，可以开始推理。`
     }
   } catch (e) {
     errorMsg.value = formatError(e)
+    infoMsg.value = ''
+  } finally {
+    downloadingModelId.value = ''
   }
 }
 
@@ -146,7 +162,16 @@ async function importModel(): Promise<void> {
 
 onMounted(() => {
   void loadList()
-  wsClient.on('client.open', () => void loadList())
+  stopClientOpen = wsClient.on('client.open', () => void loadList())
+  stopDownloadProgress = wsClient.on('model.download.progress', (msg) => {
+    const data = msg.data as { model_id?: string; message?: string } | undefined
+    if (data?.model_id === downloadingModelId.value && data.message) infoMsg.value = data.message
+  })
+})
+
+onUnmounted(() => {
+  stopClientOpen?.()
+  stopDownloadProgress?.()
 })
 </script>
 
@@ -164,7 +189,6 @@ onMounted(() => {
         <button type="button" class="primary" @click="importModel">
           {{ t('models.import') }}
         </button>
-        <button type="button" class="ghost" @click="downloadBuiltin">{{ t('models.download') }}</button>
         <button type="button" class="ghost" :disabled="loading" @click="loadList">
           {{ t('action.refresh') }}
         </button>
@@ -173,6 +197,10 @@ onMounted(() => {
 
     <p v-if="errorMsg" class="err-text">{{ errorMsg }}</p>
     <p v-if="infoMsg" class="info-text">{{ infoMsg }}</p>
+    <p class="hint-text">首次使用内置模型时，点对应模型旁的「下载」获取权重；下载后保存在本机，可离线使用。</p>
+    <p v-if="yoloRuntimeMissing" class="runtime-warning">
+      当前发行包缺少 YOLO 推理组件（PyTorch / Ultralytics），模型暂时无法推理。请安装包含 CPU 推理环境的新版安装包。
+    </p>
 
     <div class="grid">
       <div class="panel">
@@ -182,6 +210,7 @@ onMounted(() => {
               <th>{{ t('models.name') }}</th>
               <th>{{ t('models.backend') }}</th>
               <th>{{ t('models.status') }}</th>
+              <th>权重</th>
             </tr>
           </thead>
           <tbody>
@@ -197,6 +226,26 @@ onMounted(() => {
                 <span class="badge" :class="m.loaded ? 'ok' : ''">
                   {{ m.loaded ? t('models.loaded') : t('models.unloaded') }}
                 </span>
+              </td>
+              <td class="weights-cell">
+                <span
+                  class="badge"
+                  :class="{
+                    ok: m.weights_available !== false && m.runtime_available !== false,
+                    missing: m.weights_available === false || m.runtime_available === false
+                  }"
+                >
+                  {{ m.runtime_available === false ? '推理组件缺失' : m.weights_available === false ? (m.downloadable ? '未下载' : '缺少权重') : '已就绪' }}
+                </span>
+                <button
+                  v-if="m.downloadable && m.weights_available === false"
+                  type="button"
+                  class="ghost mini"
+                  :disabled="Boolean(downloadingModelId) || m.runtime_available === false"
+                  @click.stop="downloadBuiltin(m.model_id)"
+                >
+                  {{ downloadingModelId === m.model_id ? '下载中…' : '下载' }}
+                </button>
               </td>
             </tr>
           </tbody>
@@ -274,6 +323,23 @@ onMounted(() => {
   color: var(--danger);
   margin: 0;
   font-size: var(--text-sm);
+}
+.hint-text {
+  color: var(--text-secondary);
+  margin: 0;
+  font-size: var(--text-sm);
+}
+.runtime-warning {
+  color: var(--danger);
+  margin: 0;
+  font-size: var(--text-sm);
+}
+.weights-cell {
+  white-space: nowrap;
+}
+.badge.missing {
+  color: var(--warning, #a76500);
+  background: var(--warning-soft, #fff3d6);
 }
 .info-text {
   color: var(--success);

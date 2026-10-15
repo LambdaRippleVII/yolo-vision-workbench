@@ -6,6 +6,9 @@ export interface ModelItem {
   model_id: string
   name: string
   loaded: boolean
+  weights_available?: boolean
+  downloadable?: boolean
+  runtime_available?: boolean
   class_list?: Array<{ class_id: number; class_name: string; display_name: string }>
 }
 
@@ -13,11 +16,13 @@ const props = defineProps<{
   models: ModelItem[]
   selected: string[]
   compact?: boolean
+  downloadingModelId?: string
 }>()
 
 const emit = defineEmits<{
   'update:selected': [string[]]
   toggleModel: [modelId: string, checked: boolean]
+  download: [modelId: string]
 }>()
 
 const classFilter = ref<Record<string, string[]>>({})
@@ -55,23 +60,46 @@ function onClassUpdate(modelId: string, list: string[]): void {
   classFilter.value = { ...classFilter.value, [modelId]: list }
 }
 
+function statusLabel(model: ModelItem): string {
+  if (model.runtime_available === false) return '缺少推理组件'
+  if (model.weights_available === false) return model.downloadable ? '未下载' : '缺少权重'
+  return model.loaded ? '已加载' : '未加载'
+}
+
 defineExpose({ classFilter })
 </script>
 
 <template>
   <div class="model-picker" :class="{ compact }">
     <div class="list">
-      <label v-for="m in models" :key="m.model_id" class="row">
-        <input
-          type="checkbox"
-          :checked="selected.includes(m.model_id)"
-          @change="onToggle(m.model_id, ($event.target as HTMLInputElement).checked)"
-        />
-        <span class="name">{{ m.name }}</span>
-        <span class="badge" :class="m.loaded ? 'ok' : ''">
-          {{ m.loaded ? '已加载' : '未加载' }}
-        </span>
-      </label>
+      <div v-for="m in models" :key="m.model_id" class="row">
+        <label class="model-toggle">
+          <input
+            type="checkbox"
+            :checked="selected.includes(m.model_id)"
+            @change="onToggle(m.model_id, ($event.target as HTMLInputElement).checked)"
+          />
+          <span class="name">{{ m.name }}</span>
+        </label>
+        <div class="status-tools">
+          <span
+            class="badge"
+            :class="{
+              ok: m.loaded && m.runtime_available !== false && m.weights_available !== false,
+              missing: m.runtime_available === false || m.weights_available === false
+            }"
+          >{{ statusLabel(m) }}</span>
+          <button
+            v-if="m.weights_available === false && m.downloadable && m.runtime_available !== false"
+            type="button"
+            class="ghost mini download-btn"
+            :disabled="Boolean(downloadingModelId)"
+            @click.stop.prevent="emit('download', m.model_id)"
+          >
+            {{ downloadingModelId === m.model_id ? '下载中…' : '下载' }}
+          </button>
+        </div>
+      </div>
       <div v-if="!models.length" class="muted">暂无模型</div>
     </div>
 
@@ -108,10 +136,17 @@ defineExpose({ classFilter })
 }
 .row {
   display: flex;
-  gap: 8px;
+  gap: 6px;
   align-items: center;
   font-size: var(--text-sm);
   min-width: 0;
+}
+.model-toggle {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+  flex: 1;
 }
 .name {
   flex: 1;
@@ -119,6 +154,19 @@ defineExpose({ classFilter })
   text-overflow: ellipsis;
   white-space: nowrap;
   min-width: 0;
+}
+.status-tools {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+.badge.missing {
+  color: var(--warning, #a76500);
+  background: var(--warning-soft, #fff3d6);
+}
+.download-btn {
+  padding: 2px 5px;
 }
 .cls-row {
   overflow: hidden;

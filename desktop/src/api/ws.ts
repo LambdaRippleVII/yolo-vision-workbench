@@ -13,28 +13,44 @@ export class WsClient {
   private pingTimer: number | null = null
   private reconnectDelay = 1000
   private closedByUser = false
+  private socketGeneration = 0
 
   connect(url: string): void {
     this.url = url
     this.closedByUser = false
-    this.open()
+    const generation = ++this.socketGeneration
+    const previous = this.ws
+    this.ws = null
+    this.stopPing()
+    if (previous) {
+      this.rejectPending('WebSocket endpoint changed')
+      previous.close()
+    }
+    this.open(generation)
   }
 
-  private open(): void {
+  private open(generation = this.socketGeneration): void {
+    if (generation !== this.socketGeneration || this.closedByUser) return
     if (this.ws) {
-      this.ws.close()
+      const previous = this.ws
       this.ws = null
+      previous.close()
     }
     const ws = new WebSocket(this.url)
     this.ws = ws
 
     ws.onopen = () => {
+      if (generation !== this.socketGeneration) {
+        ws.close()
+        return
+      }
       this.reconnectDelay = 1000
       this.emitLocal('client.open', { url: this.url })
       this.startPing()
     }
 
     ws.onmessage = (ev) => {
+      if (generation !== this.socketGeneration) return
       let msg: Envelope
       try {
         msg = JSON.parse(String(ev.data)) as Envelope
@@ -63,10 +79,13 @@ export class WsClient {
     }
 
     ws.onclose = () => {
+      if (generation !== this.socketGeneration) return
+      this.ws = null
       this.stopPing()
+      this.rejectPending('WebSocket disconnected')
       this.emitLocal('client.close', {})
       if (!this.closedByUser) {
-        window.setTimeout(() => this.open(), this.reconnectDelay)
+        window.setTimeout(() => this.open(generation), this.reconnectDelay)
         this.reconnectDelay = Math.min(this.reconnectDelay * 2, 15_000)
       }
     }
@@ -90,6 +109,11 @@ export class WsClient {
       window.clearInterval(this.pingTimer)
       this.pingTimer = null
     }
+  }
+
+  private rejectPending(message: string): void {
+    for (const request of this.pending.values()) request.reject(new Error(message))
+    this.pending.clear()
   }
 
   private emitLocal(type: string, data: Record<string, unknown>): void {
@@ -134,9 +158,12 @@ export class WsClient {
 
   close(): void {
     this.closedByUser = true
+    this.socketGeneration += 1
     this.stopPing()
-    this.ws?.close()
+    this.rejectPending('WebSocket closed')
+    const current = this.ws
     this.ws = null
+    current?.close()
   }
 }
 

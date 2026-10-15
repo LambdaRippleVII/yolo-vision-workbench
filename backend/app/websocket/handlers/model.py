@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 from loguru import logger
@@ -158,15 +159,49 @@ def register_model_handlers(hub: WebSocketHub, model_manager) -> None:
 
     async def on_download(msg: dict[str, Any], ctx: ConnectionContext) -> dict[str, Any]:
         data = msg.get("data") or {}
-        from app.model_manager.downloader import HUB_NAME, download_weight, _default_filename
+        from app.model_manager.downloader import HUB_NAME, download_weight
 
-        model_ids = data.get("model_ids") or list(HUB_NAME.keys())
+        raw_model_ids = data.get("model_ids")
+        model_ids = raw_model_ids if raw_model_ids is not None else list(HUB_NAME)
+        if not isinstance(model_ids, list) or not model_ids:
+            return make_error(
+                "model.downloadBuiltin",
+                "BAD_REQUEST",
+                "model_ids must be a non-empty list",
+                id_=msg.get("id"),
+            )
+        model_ids = list(dict.fromkeys(str(mid) for mid in model_ids))
+        if len(model_ids) > len(HUB_NAME):
+            return make_error(
+                "model.downloadBuiltin",
+                "BAD_REQUEST",
+                f"at most {len(HUB_NAME)} builtin models can be downloaded at once",
+                id_=msg.get("id"),
+            )
+
+        loop = asyncio.get_running_loop()
         results = []
-        for mid in [str(x) for x in model_ids]:
-            dest = model_manager._models_dir / "examples" / "weights" / _default_filename(mid)
+        for mid in model_ids:
+            cfg = model_manager.get_config(mid)
+            if mid not in HUB_NAME or cfg is None or cfg.backend != "yolo":
+                results.append({"model_id": mid, "ok": False, "error": "没有可下载的内置模型权重"})
+                continue
+
+            dest = model_manager.resolve_weight(cfg)
+
+            def report_progress(message: str, model_id: str = mid) -> None:
+                event = make_message(
+                    "model.download.progress",
+                    {"model_id": model_id, "message": message},
+                )
+                try:
+                    asyncio.run_coroutine_threadsafe(hub.broadcast(event), loop)
+                except RuntimeError:
+                    logger.debug("download progress skipped after backend shutdown")
+
             try:
-                download_weight(mid, dest)
-                results.append({"model_id": mid, "ok": True, "path": str(dest)})
+                path = await asyncio.to_thread(download_weight, mid, dest, progress=report_progress)
+                results.append({"model_id": mid, "ok": True, "path": str(path)})
             except Exception as exc:  # noqa: BLE001
                 results.append({"model_id": mid, "ok": False, "error": str(exc)})
         model_manager.refresh()

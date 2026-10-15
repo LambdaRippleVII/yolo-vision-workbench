@@ -21,6 +21,8 @@ export type BackendStatus =
 export interface SupervisorOptions {
   /** Absolute path to repo root (contains backend/). */
   rootDir: string
+  /** Expected backend version; mismatched existing services are not reused. */
+  version?: string
   host: string
   port: number
   /** Optional explicit python executable. */
@@ -44,10 +46,11 @@ export interface SupervisorStatus {
 }
 
 export class ProcessSupervisor extends EventEmitter {
-  private opts: Required<Omit<SupervisorOptions, 'pythonPath' | 'attachMode'>> & {
+  private opts: Required<Omit<SupervisorOptions, 'pythonPath' | 'attachMode' | 'version'>> & {
     pythonPath?: string
     attachMode: boolean
     autoPort: boolean
+    version?: string
   }
   private child: ChildProcess | null = null
   private status: BackendStatus = 'stopped'
@@ -61,6 +64,7 @@ export class ProcessSupervisor extends EventEmitter {
     super()
     this.opts = {
       rootDir: options.rootDir,
+      version: options.version,
       host: options.host,
       port: options.port,
       healthTimeoutMs: options.healthTimeoutMs ?? 60_000,
@@ -173,11 +177,21 @@ export class ProcessSupervisor extends EventEmitter {
 
     const existing = await probeBackendHealth(host, preferred)
     if (existing.ok) {
-      return {
-        port: preferred,
-        reuse: true,
-        pid: existing.pid,
-        note: `检测到已有后端服务，直接复用（端口 ${preferred}，PID ${existing.pid ?? '?'}）`
+      const compatible =
+        existing.product === 'YOLO Vision Workbench' &&
+        (!this.opts.version || existing.version === this.opts.version)
+      if (compatible) {
+        return {
+          port: preferred,
+          reuse: true,
+          pid: existing.pid,
+          note: `检测到同版本后端服务，直接复用（端口 ${preferred}，PID ${existing.pid ?? '?'}）`
+        }
+      }
+      if (this.opts.attachMode) {
+        const found = `${existing.product || '未知服务'}${existing.version ? ` ${existing.version}` : ''}`
+        const expected = this.opts.version ? `，需要版本 ${this.opts.version}` : ''
+        throw new Error(`端口 ${preferred} 上的服务不兼容（${found}${expected}），无法连接。`)
       }
     }
 

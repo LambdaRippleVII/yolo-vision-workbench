@@ -1,6 +1,6 @@
 [project]
 name = "yolo-vision-workbench-backend"
-version = "0.1.0"
+version = "0.2.4"
 description = "YOLO Vision Workbench Python backend service"
 requires-python = ">=3.11"
 dependencies = [
@@ -10,6 +10,7 @@ dependencies = [
     "pydantic>=2.9.0",
     "loguru>=0.7.2",
     "PyYAML>=6.0.2",
+    "certifi>=2024.2.2",
 ]
 
 [project.scripts]

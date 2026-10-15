@@ -3,7 +3,7 @@
  * 产品名：YOLO Vision Workbench
  */
 import { app, BrowserWindow, dialog, ipcMain, Menu, shell, MenuItemConstructorOptions } from 'electron'
-import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
+import { appendFileSync, copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'fs'
 import { pathToFileURL } from 'url'
 import { join, resolve, basename } from 'path'
 import { ProcessSupervisor } from './backend/supervisor'
@@ -16,7 +16,7 @@ const ATTACH = process.env.YOLO_STUDIO_ATTACH === '1'
 
 function logMain(message: string): void {
   try {
-    const dir = resolve(repoRoot(), 'logs')
+    const dir = app.isPackaged ? join(app.getPath('userData'), 'logs') : resolve(repoRoot(), 'logs')
     mkdirSync(dir, { recursive: true })
     appendFileSync(join(dir, 'electron-main.log'), `${new Date().toISOString()} ${message}\n`)
   } catch {
@@ -33,6 +33,37 @@ function repoRoot(): string {
   // Dev: desktop/ -> project root
   const desktopDir = app.getAppPath()
   return resolve(desktopDir, '..')
+}
+
+function copyMissingFiles(sourceDir: string, targetDir: string): void {
+  if (!existsSync(sourceDir)) return
+  mkdirSync(targetDir, { recursive: true })
+  for (const entry of readdirSync(sourceDir, { withFileTypes: true })) {
+    const source = join(sourceDir, entry.name)
+    const target = join(targetDir, entry.name)
+    if (entry.isDirectory()) {
+      copyMissingFiles(source, target)
+    } else if (entry.isFile() && !existsSync(target)) {
+      copyFileSync(source, target)
+    }
+  }
+}
+
+function preparePackagedData(): void {
+  if (!app.isPackaged) return
+
+  const userDataDir = app.getPath('userData')
+  const modelsDir = resolve(process.env.YOLO_STUDIO_MODELS_DIR || join(userDataDir, 'models'))
+  const projectsDir = resolve(process.env.YOLO_STUDIO_PROJECTS_DIR || join(userDataDir, 'projects'))
+  const logsDir = resolve(process.env.YOLO_STUDIO_LOGS_DIR || join(userDataDir, 'logs'))
+
+  copyMissingFiles(join(process.resourcesPath, 'models'), modelsDir)
+  copyMissingFiles(join(process.resourcesPath, 'projects'), projectsDir)
+  mkdirSync(projectsDir, { recursive: true })
+  mkdirSync(logsDir, { recursive: true })
+  process.env.YOLO_STUDIO_MODELS_DIR = modelsDir
+  process.env.YOLO_STUDIO_PROJECTS_DIR = projectsDir
+  process.env.YOLO_STUDIO_LOGS_DIR = logsDir
 }
 
 /** 系统级应用菜单（中文） */
@@ -157,8 +188,14 @@ function buildAppMenu(): void {
 
 const supervisor = new ProcessSupervisor({
   rootDir: repoRoot(),
+  // Always use the packaged environment in releases, even when a developer
+  // machine has YOLO_STUDIO_PYTHON set to a separate interpreter.
+  pythonPath: app.isPackaged
+    ? join(process.resourcesPath, 'python-embed', 'runtime', 'python.exe')
+    : undefined,
   host: HOST,
   port: PORT,
+  version: app.getVersion(),
   attachMode: ATTACH,
   autoPort: true
 })
@@ -286,7 +323,7 @@ ipcMain.handle('dialog:selectVideo', async () => {
     title: '选择视频',
     properties: ['openFile'],
     filters: [
-      { name: '视频', extensions: ['mp4', 'avi', 'mov', 'mkv', 'webm'] }
+      { name: '视频', extensions: ['mp4', 'm4v', 'avi', 'mov', 'mkv', 'webm', 'flv', '3gp'] }
     ]
   })
   if (result.canceled || !result.filePaths.length) return null
@@ -372,6 +409,7 @@ app.whenReady().then(async () => {
   createWindow()
 
   try {
+    preparePackagedData()
     await supervisor.start()
     logMain(`supervisor started status=${JSON.stringify(supervisor.getStatus())}`)
   } catch (err) {

@@ -14,7 +14,7 @@ source:
   repo: https://github.com/ultralytics/ultralytics
   license: AGPL-3.0
   model: YOLO11n
-  note: Objects365 预训练权重来自 Ultralytics；数据集版权归 Objects365 所有
+  note: 此模型配置未提供官方可下载权重；请导入自有权重。数据集版权归 Objects365 所有
 
 classes:
   - Person

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import threading
+from importlib.util import find_spec
 from pathlib import Path
 from typing import Any
 
@@ -43,8 +44,25 @@ class ModelManager:
                 item = cfg.public_dict()
                 item["loaded"] = cfg.id in self._loaded
                 item["class_list"] = class_entries(cfg, runtime_classes)
+                item.update(self._availability(cfg))
                 out.append(item)
             return out
+
+    def _availability(self, cfg: ModelConfig) -> dict[str, bool]:
+        from app.model_manager.downloader import HUB_NAME, weight_file_available
+
+        if cfg.backend != "yolo":
+            return {"weights_available": True, "downloadable": False, "runtime_available": True}
+
+        try:
+            runtime_available = find_spec("ultralytics") is not None and find_spec("torch") is not None
+        except (ImportError, ValueError):
+            runtime_available = False
+        return {
+            "weights_available": weight_file_available(self.resolve_weight(cfg)),
+            "downloadable": cfg.id in HUB_NAME,
+            "runtime_available": runtime_available,
+        }
 
     def _peek_classes(self, cfg: ModelConfig) -> list[str] | None:
         """Read class names without keeping a runtime instance (cache on config)."""
@@ -72,8 +90,7 @@ class ModelManager:
             setattr(cfg, "_peeked_classes", names)
             if names:
                 persist_classes(cfg.config_path, names)
-                if not cfg.classes:
-                    cfg.classes = names
+                cfg.classes = names
             return names
         except Exception as exc:  # noqa: BLE001
             logger.warning("peek classes failed {}: {}", cfg.id, exc)
@@ -124,18 +141,21 @@ class ModelManager:
 
             runtime = registry.create(backend_type)
             weight = Path(model_path).resolve() if model_path else self.resolve_weight(cfg)
-            if not weight.exists() and cfg.backend == "yolo":
-                from app.model_manager.downloader import download_weight, _default_filename
+            if cfg.backend == "yolo":
+                from app.model_manager.downloader import HUB_NAME, download_weight, weight_file_available
 
-                try:
-                    weight = download_weight(
-                        cfg.id,
-                        self._models_dir / "examples" / "weights" / _default_filename(cfg.id),
-                    )
-                except Exception as dl_exc:  # noqa: BLE001
+                if not weight_file_available(weight) and cfg.id not in HUB_NAME:
                     raise FileNotFoundError(
-                        f"模型权重不存在：{weight}。请点「下载内置模型」，或手动放入 weights 目录。详情：{dl_exc}"
-                    ) from dl_exc
+                        f"模型权重不存在：{weight}。请通过「添加模型」导入对应权重，"
+                        "或将权重放到该模型配置所指向的文件位置。"
+                    )
+                if not weight_file_available(weight):
+                    try:
+                        weight = download_weight(cfg.id, weight)
+                    except Exception as dl_exc:  # noqa: BLE001
+                        raise FileNotFoundError(
+                            f"模型权重不存在：{weight}。请在模型管理中下载权重后重试。详情：{dl_exc}"
+                        ) from dl_exc
             try:
                 runtime.load_model(weight, cfg)
             except Exception as exc:  # noqa: BLE001
@@ -147,8 +167,7 @@ class ModelManager:
             if names:
                 setattr(cfg, "_peeked_classes", names)
                 persist_classes(cfg.config_path, names)
-                if not cfg.classes:
-                    cfg.classes = names
+                cfg.classes = names
             logger.info("model loaded: {} path={} classes={}", model_id, weight, len(names) if names else 0)
             return self._public_loaded(model_id)
 
@@ -201,4 +220,5 @@ class ModelManager:
         item = cfg.public_dict()
         item["loaded"] = True
         item["class_list"] = class_entries(cfg, runtime_classes)
+        item.update(self._availability(cfg))
         return item

@@ -28,6 +28,19 @@ def resolve_media_path(raw: str, allowed_roots: list[Path]) -> Path | None:
         except ValueError:
             continue
     # also allow absolute files on same drive for user media
-    if p.suffix.lower() in {".mp4", ".mov", ".avi", ".mkv", ".webm", ".jpg", ".jpeg", ".png", ".webp"}:
+    if p.suffix.lower() in {
+        ".mp4",
+        ".m4v",
+        ".mov",
+        ".avi",
+        ".mkv",
+        ".webm",
+        ".flv",
+        ".3gp",
+        ".jpg",
+        ".jpeg",
+        ".png",
+        ".webp",
+    }:
         return p
     return None

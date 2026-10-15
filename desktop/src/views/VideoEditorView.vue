@@ -17,12 +17,17 @@ interface ModelItem {
   model_id: string
   name: string
   loaded: boolean
+  weights_available?: boolean
+  downloadable?: boolean
+  runtime_available?: boolean
   class_list?: Array<{ class_id: number; class_name: string; display_name: string }>
 }
 
 const taskId = ref('')
 const videoPath = ref('')
 const videoUrl = ref('')
+const videoPreviewState = ref<'idle' | 'loading' | 'ready' | 'error'>('idle')
+const videoPreviewError = ref('')
 const labelTemplate = ref('{id}:{class}')
 const timeline = ref<FrameItem[]>([])
 const currentFrameId = ref(0)
@@ -39,6 +44,7 @@ const dragging = ref(false)
 const running = ref(false)
 const models = ref<ModelItem[]>([])
 const selectedModels = ref<string[]>([])
+const downloadingModelId = ref('')
 const skipFrame = ref(5)
 const boxPersistence = ref(5)
 /** timeline precision: 1 = every frame */
@@ -49,6 +55,12 @@ const hiddenClasses = ref<Set<string>>(new Set())
 /** timeline UI mode: filmstrip thumbs vs PR-style track bar */
 const timelineMode = ref<'filmstrip' | 'track'>('filmstrip')
 const draggingPlayhead = ref(false)
+let videoPreviewRequestId = 0
+let videoSelectionId = 0
+let videoPreviewTimer: number | undefined
+let stopDownloadProgress: (() => void) | undefined
+let stopTaskDone: (() => void) | undefined
+let stopClientOpen: (() => void) | undefined
 
 const filteredObjects = computed(() =>
   objects.value.filter((o) => !hiddenClasses.value.has(o.class_name))
@@ -87,6 +99,7 @@ const sampledTimeline = computed(() => {
 })
 
 const timecode = computed(() => {
+  if (!timeline.value.length) return videoPath.value ? '待推理' : '000 / 000'
   const total = timeline.value.length || 0
   const cur = currentIndex.value
   const fmt = (n: number) => String(n).padStart(3, '0')
@@ -98,7 +111,7 @@ function setErr(e: unknown): void {
 }
 
 function looksLikeVideo(p: string): boolean {
-  return /\.(mp4|avi|mov|mkv|webm|m4v|flv)$/i.test(p)
+  return /\.(mp4|avi|mov|mkv|webm|m4v|flv|3gp)$/i.test(p)
 }
 
 async function loadModels(): Promise<void> {
@@ -114,6 +127,37 @@ async function loadModels(): Promise<void> {
   }
 }
 
+async function downloadModel(modelId: string): Promise<boolean> {
+  if (downloadingModelId.value) return false
+  const model = models.value.find((item) => item.model_id === modelId)
+  if (!model) return false
+
+  downloadingModelId.value = modelId
+  errorMsg.value = ''
+  infoMsg.value = `正在下载 ${model.name} 权重…`
+  try {
+    const resp = await wsClient.request('model.downloadBuiltin', { model_ids: [modelId] }, 10 * 60 * 1000)
+    const results = (resp.data as {
+      results?: Array<{ model_id: string; ok: boolean; error?: string }>
+    }).results || []
+    const result = results.find((item) => item.model_id === modelId)
+    await loadModels()
+    if (!result?.ok) {
+      errorMsg.value = `模型权重下载失败：${result?.error || '后端没有返回下载结果'}`
+      infoMsg.value = ''
+      return false
+    }
+    infoMsg.value = `${model.name} 权重已下载，可以开始推理。`
+    return true
+  } catch (e) {
+    setErr(e)
+    infoMsg.value = ''
+    return false
+  } finally {
+    downloadingModelId.value = ''
+  }
+}
+
 async function pickVideo(): Promise<void> {
   const api = window.yoloStudio
   errorMsg.value = ''
@@ -122,22 +166,113 @@ async function pickVideo(): Promise<void> {
     errorMsg.value = '请在桌面端中选择视频'
     return
   }
-  const path = await api.selectVideo()
-  if (!path) return
-  await setVideo(path)
+  try {
+    const path = await api.selectVideo()
+    if (!path) return
+    await setVideo(path)
+  } catch (e) {
+    setErr(e)
+  }
 }
 
 async function setVideo(path: string): Promise<void> {
+  videoSelectionId += 1
   videoPath.value = path
-  const api = window.yoloStudio
-  videoUrl.value = 'http://127.0.0.1:8765/media?path=' + encodeURIComponent(path)
+  videoUrl.value = ''
   imageUrl.value = ''
   objects.value = []
   timeline.value = []
+  thumbs.value = {}
+  currentFrameId.value = 0
+  selectedId.value = null
   selectedFrames.value = new Set()
   taskId.value = ''
+  loading.value = false
   hasEdits.value = false
-  infoMsg.value = `已选择视频：${path.split(/[\\/]/).pop() || path}`
+  videoPreviewError.value = ''
+  errorMsg.value = ''
+  await loadVideoPreview(path)
+}
+
+function clearVideoPreviewTimer(): void {
+  if (videoPreviewTimer !== undefined) {
+    window.clearTimeout(videoPreviewTimer)
+    videoPreviewTimer = undefined
+  }
+}
+
+function previewErrorMessage(message: string): void {
+  clearVideoPreviewTimer()
+  videoPreviewState.value = 'error'
+  videoPreviewError.value = message
+  errorMsg.value = `视频预览失败：${message}。请检查文件是否损坏或转为 H.264 MP4；也可以点「开始推理」查看后端解码结果。`
+  infoMsg.value = ''
+}
+
+async function loadVideoPreview(path: string): Promise<void> {
+  const requestId = ++videoPreviewRequestId
+  clearVideoPreviewTimer()
+  videoPreviewState.value = 'loading'
+  videoPreviewError.value = ''
+  infoMsg.value = `已选择视频：${path.split(/[\\/]/).pop() || path}，正在读取视频信息…`
+
+  try {
+    const api = window.yoloStudio
+    let baseUrl = 'http://127.0.0.1:8765'
+    if (api?.getWsUrl) {
+      const wsUrl = await api.getWsUrl()
+      baseUrl = wsUrl.replace(/^wss:/i, 'https:').replace(/^ws:/i, 'http:').replace(/\/ws\/?$/i, '')
+    }
+    if (requestId !== videoPreviewRequestId) return
+    videoUrl.value = `${baseUrl}/media?path=${encodeURIComponent(path)}`
+    videoPreviewTimer = window.setTimeout(() => {
+      if (requestId === videoPreviewRequestId && videoPreviewState.value === 'loading') {
+        previewErrorMessage('等待视频元数据超时；请检查后端连接、文件权限和视频编码格式')
+      }
+    }, 15_000)
+  } catch (e) {
+    if (requestId === videoPreviewRequestId) previewErrorMessage(formatError(e))
+  }
+}
+
+function formatDuration(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds < 0) return '时长未知'
+  const total = Math.floor(seconds)
+  const hours = Math.floor(total / 3600)
+  const minutes = Math.floor((total % 3600) / 60)
+  const remaining = total % 60
+  return hours
+    ? `${hours}:${String(minutes).padStart(2, '0')}:${String(remaining).padStart(2, '0')}`
+    : `${minutes}:${String(remaining).padStart(2, '0')}`
+}
+
+function onVideoLoadedMetadata(ev: Event): void {
+  const video = ev.currentTarget as HTMLVideoElement
+  if (video.getAttribute('src') !== videoUrl.value) return
+  if (!video.videoWidth || !video.videoHeight) {
+    previewErrorMessage('视频没有有效画面信息，文件可能损坏')
+    return
+  }
+  clearVideoPreviewTimer()
+  videoPreviewState.value = 'ready'
+  videoPreviewError.value = ''
+  errorMsg.value = ''
+  infoMsg.value = `视频已加载：${video.videoWidth}×${video.videoHeight} · ${formatDuration(video.duration)}`
+}
+
+function onVideoError(ev: Event): void {
+  const video = ev.currentTarget as HTMLVideoElement
+  if (video.getAttribute('src') !== videoUrl.value) return
+  const code = video.error?.code
+  const message = video.error?.message?.trim()
+  const reasons: Record<number, string> = {
+    1: '读取已中止',
+    2: '无法读取视频文件，请检查文件是否存在、可访问',
+    3: '视频解码失败，文件可能损坏或编码不受支持',
+    4: '浏览器不支持此视频格式或编码，建议转为 H.264 MP4'
+  }
+  const reason = (code && reasons[code]) || '播放器无法加载此视频'
+  previewErrorMessage(message ? `${reason}（${message}）` : reason)
 }
 
 async function startDetect(): Promise<void> {
@@ -152,6 +287,25 @@ async function startDetect(): Promise<void> {
   running.value = true
   errorMsg.value = ''
   try {
+    for (const modelId of selectedModels.value) {
+      let model = models.value.find((item) => item.model_id === modelId)
+      if (!model) continue
+      if (model.runtime_available === false) {
+        throw new Error('当前安装包缺少 YOLO 推理组件，请安装包含 CPU 推理环境的新版安装包。')
+      }
+      if (model.weights_available === false) {
+        if (!model.downloadable) {
+          throw new Error(`模型「${model.name}」缺少权重文件，请先在模型管理中导入对应权重。`)
+        }
+        const downloaded = await downloadModel(modelId)
+        if (!downloaded) return
+        model = models.value.find((item) => item.model_id === modelId)
+        if (model?.weights_available === false) {
+          throw new Error(`模型「${model.name}」权重仍不可用，请到模型管理检查下载结果。`)
+        }
+      }
+    }
+
     const resp = await wsClient.request('video.start', {
       media_path: videoPath.value,
       model_ids: selectedModels.value,
@@ -170,27 +324,34 @@ async function startDetect(): Promise<void> {
 
 async function loadTimeline(): Promise<void> {
   if (!taskId.value) return
+  const selectionId = videoSelectionId
+  const requestedTaskId = taskId.value
   try {
-    const resp = await wsClient.request('result.frames', { task_id: taskId.value })
+    const resp = await wsClient.request('result.frames', { task_id: requestedTaskId })
+    if (selectionId !== videoSelectionId || requestedTaskId !== taskId.value) return
     timeline.value = ((resp.data as { frames?: FrameItem[] }).frames ?? []) as FrameItem[]
     if (timeline.value.length) {
       await showFrame(timeline.value[0].frame_id)
       void loadThumbs()
     }
   } catch (e) {
-    setErr(e)
+    if (selectionId === videoSelectionId && requestedTaskId === taskId.value) setErr(e)
   }
 }
 
 async function loadThumbs(): Promise<void> {
   if (!videoPath.value || !timeline.value.length) return
+  const selectionId = videoSelectionId
+  const requestedTaskId = taskId.value
+  const requestedVideoPath = videoPath.value
   const ids = sampledTimeline.value.map((f) => f.frame_id).slice(0, 120)
   if (!ids.length) return
   try {
     const resp = await wsClient.request('result.thumbs', {
-      video_path: videoPath.value,
+      video_path: requestedVideoPath,
       frame_ids: ids
     })
+    if (selectionId !== videoSelectionId || requestedTaskId !== taskId.value) return
     const list = ((resp.data as { thumbs?: Array<{ frame_id: number; thumb_url: string }> }).thumbs || []) as Array<{
       frame_id: number
       thumb_url: string
@@ -206,26 +367,31 @@ async function loadThumbs(): Promise<void> {
 }
 
 async function showFrame(frameId: number): Promise<void> {
+  const selectionId = videoSelectionId
+  const requestedTaskId = taskId.value
+  const requestedVideoPath = videoPath.value
   currentFrameId.value = frameId
   loading.value = true
   try {
-    if (videoPath.value) {
+    if (requestedVideoPath) {
       const preview = await wsClient.request('result.preview', {
-        video_path: videoPath.value,
+        video_path: requestedVideoPath,
         frame_id: frameId
       })
+      if (selectionId !== videoSelectionId || requestedTaskId !== taskId.value) return
       imageUrl.value = String((preview.data as { data_url?: string }).data_url || '')
     }
     const frameResp = await wsClient.request('result.frame', {
-      task_id: taskId.value,
+      task_id: requestedTaskId,
       frame_id: frameId
     })
+    if (selectionId !== videoSelectionId || requestedTaskId !== taskId.value) return
     objects.value = ((frameResp.data as { objects?: BoxObject[] }).objects ?? []) as BoxObject[]
     selectedId.value = objects.value.length ? objects.value[0].id : null
   } catch (e) {
-    setErr(e)
+    if (selectionId === videoSelectionId && requestedTaskId === taskId.value) setErr(e)
   } finally {
-    loading.value = false
+    if (selectionId === videoSelectionId && requestedTaskId === taskId.value) loading.value = false
   }
 }
 
@@ -397,6 +563,8 @@ function resolveDropPath(file: File): string {
 }
 
 async function handleDrop(ev: DragEvent): Promise<void> {
+  ev.preventDefault()
+  ev.stopPropagation()
   dragging.value = false
   const files = ev.dataTransfer?.files
   if (!files?.length) return
@@ -407,7 +575,7 @@ async function handleDrop(ev: DragEvent): Promise<void> {
       return
     }
   }
-  errorMsg.value = '请拖入视频文件（mp4/mov/avi 等）'
+  errorMsg.value = '没有导入视频：请拖入 mp4/m4v/mov/avi/mkv/webm/flv/3gp 文件，并确认文件路径可访问。'
 }
 
 function clearDrag(): void {
@@ -420,6 +588,7 @@ async function handlePaste(ev: ClipboardEvent): Promise<void> {
   const f = items[0]
   const p = resolveDropPath(f)
   if (p && looksLikeVideo(p)) await setVideo(p)
+  else errorMsg.value = '无法从剪贴板读取视频路径，请使用「选择视频」或直接拖入视频文件。'
 }
 
 async function openFromRoute(): Promise<void> {
@@ -429,8 +598,7 @@ async function openFromRoute(): Promise<void> {
   taskId.value = params.get('task') || sessionStorage.getItem('editor_task_id') || taskId.value
   videoPath.value = params.get('video') || sessionStorage.getItem('editor_video_path') || videoPath.value
   if (videoPath.value) {
-    const api = window.yoloStudio
-    videoUrl.value = 'http://127.0.0.1:8765/media?path=' + encodeURIComponent(videoPath.value)
+    void loadVideoPreview(videoPath.value)
   }
   if (taskId.value) void loadTimeline()
 }
@@ -439,27 +607,48 @@ watch(timelineStep, () => {
   void loadThumbs()
 })
 
+function onWindowDragEnter(ev: DragEvent): void {
+  ev.preventDefault()
+  if (ev.dataTransfer?.types?.includes('Files')) dragging.value = true
+}
+
+function onWindowDragOver(ev: DragEvent): void {
+  ev.preventDefault()
+  if (ev.dataTransfer?.types?.includes('Files')) dragging.value = true
+}
+
+function onWindowDragLeave(ev: DragEvent): void {
+  if (ev.relatedTarget === null) dragging.value = false
+}
+
+function onWindowDrop(ev: DragEvent): void {
+  ev.preventDefault()
+  void handleDrop(ev)
+}
+
+function onWindowPaste(ev: ClipboardEvent): void {
+  void handlePaste(ev)
+}
+
 onMounted(() => {
   void openFromRoute()
   void loadModels()
-  window.addEventListener('dragenter', (e) => {
-    e.preventDefault()
-    if (e.dataTransfer?.types?.includes('Files')) dragging.value = true
+  stopClientOpen = wsClient.on('client.open', () => {
+    if (errorMsg.value.includes('通信未就绪')) errorMsg.value = ''
+    void loadModels()
+    if (taskId.value) void loadTimeline()
   })
-  window.addEventListener('dragover', (e) => {
-    e.preventDefault()
-    if (e.dataTransfer?.types?.includes('Files')) dragging.value = true
-  })
-  window.addEventListener('dragleave', (e) => {
-    if (e.relatedTarget === null) dragging.value = false
-  })
+  window.addEventListener('dragenter', onWindowDragEnter)
+  window.addEventListener('dragover', onWindowDragOver)
+  window.addEventListener('dragleave', onWindowDragLeave)
   window.addEventListener('dragend', clearDrag)
-  window.addEventListener('drop', (e) => {
-    e.preventDefault()
-    void handleDrop(e)
+  window.addEventListener('drop', onWindowDrop)
+  window.addEventListener('paste', onWindowPaste)
+  stopDownloadProgress = wsClient.on('model.download.progress', (msg) => {
+    const data = msg.data as { model_id?: string; message?: string } | undefined
+    if (data?.model_id === downloadingModelId.value && data.message) infoMsg.value = data.message
   })
-  window.addEventListener('paste', (e) => void handlePaste(e))
-  wsClient.on('task.done', (msg: { data?: Record<string, unknown> }) => {
+  stopTaskDone = wsClient.on('task.done', (msg: { data?: Record<string, unknown> }) => {
     const d = msg.data || {}
     if (d.type === 'video' && d.status === 'completed') {
       infoMsg.value = '视频检测完成'
@@ -472,6 +661,17 @@ onMounted(() => {
 })
 onUnmounted(() => {
   dragging.value = false
+  videoPreviewRequestId += 1
+  clearVideoPreviewTimer()
+  window.removeEventListener('dragenter', onWindowDragEnter)
+  window.removeEventListener('dragover', onWindowDragOver)
+  window.removeEventListener('dragleave', onWindowDragLeave)
+  window.removeEventListener('dragend', clearDrag)
+  window.removeEventListener('drop', onWindowDrop)
+  window.removeEventListener('paste', onWindowPaste)
+  stopDownloadProgress?.()
+  stopTaskDone?.()
+  stopClientOpen?.()
 })
 </script>
 
@@ -484,7 +684,7 @@ onUnmounted(() => {
         <button
           type="button"
           class="primary"
-          :disabled="running || !videoPath || !selectedModels.length"
+          :disabled="running || Boolean(downloadingModelId) || !videoPath || !selectedModels.length"
           @click="startDetect"
         >
           {{ running ? t('status.running') : t('action.startInfer') }}
@@ -508,7 +708,13 @@ onUnmounted(() => {
         <section class="panel">
           <div class="panel-head"><h3>模型</h3></div>
           <div class="panel-body">
-            <ModelPicker v-model:selected="selectedModels" :models="models" compact />
+            <ModelPicker
+              v-model:selected="selectedModels"
+              :models="models"
+              :downloading-model-id="running ? 'busy' : downloadingModelId"
+              compact
+              @download="downloadModel"
+            />
           </div>
         </section>
         <section class="panel">
@@ -534,8 +740,27 @@ onUnmounted(() => {
             :label-template="labelTemplate"
             @select="(id) => (selectedId = id)"
           />
-          <video v-else-if="videoUrl" class="video-preview" :src="videoUrl" controls muted />
+          <video
+            v-else-if="videoUrl"
+            :key="videoUrl"
+            class="video-preview"
+            :src="videoUrl"
+            preload="metadata"
+            controls
+            muted
+            @loadedmetadata="onVideoLoadedMetadata"
+            @error="onVideoError"
+          />
+          <div v-else-if="videoPath" class="video-placeholder">
+            <span v-if="videoPreviewState === 'loading'">正在读取视频信息…</span>
+            <span v-else-if="videoPreviewError">{{ videoPreviewError }}</span>
+          </div>
           <EmptyState v-else icon="▶" :title="t('editor.title')" :description="t('editor.empty')" />
+          <div v-if="videoPreviewError && videoUrl" class="video-preview-error" role="alert">
+            <strong>视频预览失败</strong>
+            <span>{{ videoPreviewError }}</span>
+            <small>可尝试转为 H.264 MP4；也可以点击「开始推理」查看后端是否能解码。</small>
+          </div>
         </div>
       </section>
 
@@ -628,8 +853,12 @@ onUnmounted(() => {
           </template>
         </div>
         <div class="tl-info num">
-          帧 {{ currentFrameId }} · {{ timeline.length }} 帧
-          <template v-if="loading"> · 加载中…</template>
+          <template v-if="timeline.length">
+            帧 {{ currentFrameId }} · {{ timeline.length }} 帧
+            <template v-if="loading"> · 加载中…</template>
+          </template>
+          <template v-else-if="videoPath">视频已导入 · 开始推理后生成帧结果</template>
+          <template v-else>等待视频</template>
         </div>
       </div>
 
@@ -831,6 +1060,7 @@ onUnmounted(() => {
   flex: 1;
   display: flex;
   min-height: 280px;
+  position: relative;
 }
 .monitor-stage :deep(.canvas-wrap),
 .monitor-stage :deep(.empty-state),
@@ -842,6 +1072,34 @@ onUnmounted(() => {
   height: 100%;
   object-fit: contain;
   background: var(--bg-canvas);
+}
+.video-placeholder {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  color: var(--text-secondary);
+  text-align: center;
+  background: var(--bg-canvas);
+}
+.video-preview-error {
+  position: absolute;
+  z-index: 2;
+  top: 12px;
+  left: 12px;
+  right: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--danger) 35%, transparent);
+  border-radius: 8px;
+  color: var(--danger);
+  background: color-mix(in srgb, var(--bg-panel) 94%, var(--danger));
+  font-size: var(--text-sm);
+}
+.video-preview-error small {
+  color: var(--text-secondary);
 }
 .grow {
   flex: 1;

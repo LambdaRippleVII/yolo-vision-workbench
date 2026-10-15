@@ -1,6 +1,6 @@
 {
   "name": "yolo-vision-workbench-desktop",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "private": true,
   "description": "YOLO Vision Workbench desktop shell (Electron + Vue3)",
   "main": "out/main/index.js",
@@ -10,7 +10,8 @@
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "typecheck": "vue-tsc --noEmit -p tsconfig.json",
-    "dist": "electron-vite build && electron-builder --win"
+    "prepare:python-runtime": "node scripts/prepare-python-runtime.mjs",
+    "dist": "npm run prepare:python-runtime && electron-vite build && electron-builder --win"
   },
   "dependencies": {
     "pinia": "^2.2.6",
@@ -58,7 +59,7 @@
         ]
       },
       {
-        "from": "release/python-embed/runtime",
+        "from": "vendor/python-embed/runtime",
         "to": "python-embed/runtime",
         "filter": [
           "**/*"

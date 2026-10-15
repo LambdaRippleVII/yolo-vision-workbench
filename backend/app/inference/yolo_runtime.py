@@ -52,7 +52,8 @@ class YOLORuntime(BaseRuntime):
             from ultralytics import YOLO  # type: ignore
         except ImportError as exc:
             raise ModelLoadError(
-                "ultralytics is not installed; run: uv pip install -r requirements/yolo.txt"
+                "当前安装包缺少 YOLO 推理组件（ultralytics/torch）。请安装包含 CPU 推理环境的最新版；"
+                "开发环境可运行：uv pip install -r requirements/yolo.txt"
             ) from exc
 
         try:

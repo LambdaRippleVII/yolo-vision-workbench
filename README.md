@@ -16,6 +16,12 @@ YOLO Vision Workbench 是一款面向中文用户的桌面视觉检测工具：�
 - 模型管理（本地 YAML、类别中文映射、按类配色）
 - 全中文 UI
 
+## 安装版使用
+
+安装版自带 CPU 推理运行环境，无需另装 Python。第一次使用内置模型时，在模型列表旁点「下载」；权重下载到本机用户目录，之后可离线使用。下载需要连接 Ultralytics 官方模型仓库，失败时界面会显示原因，也可用「添加模型」导入本地权重。
+
+没有官方预训练权重的配置不会显示下载按钮，需要先导入自己的权重文件。
+
 ## 快速开始
 
 ### 环境
@@ -43,6 +49,8 @@ npm run dev
 ```
 
 应用启动后会**自动拉起** Python 后端（默认 `127.0.0.1:8765`）。
+
+发行版构建使用 `npm run dist`，会在打包前向内嵌 Python 安装 CPU 版 PyTorch 和 Ultralytics。请将 Windows x64 Python 3.11+ embeddable runtime 放在 `desktop/vendor/python-embed/runtime`；旧版构建目录中的运行时会自动复制到此位置。构建机需要能访问 PyPA、PyPI 与 PyTorch CPU wheel 源。
 
 ### 3. 基本用法
 

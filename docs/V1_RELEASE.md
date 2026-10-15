@@ -39,6 +39,16 @@ npm run dev
 模型目录：`models/examples/`（demo / coco_yolov8n / person）  
 项目数据：`projects/<名称>/`
 
+### 安装版模型
+
+- 安装包随附 CPU 版 PyTorch 与 Ultralytics，不要求用户另装 Python。
+- `.pt` 权重不放进安装包。第一次使用时，在模型列表旁点击「下载」；权重保存在用户数据目录，升级软件后仍可复用。
+- 下载进度和失败原因会显示在界面中。官方没有提供可下载权重的配置需要通过「添加模型」导入本地权重。
+
+### 发行构建
+
+在 `desktop/` 下运行 `npm run dist`。构建会先将 CPU 推理依赖安装到 `desktop/vendor/python-embed/runtime`，因此构建机需要准备 Windows x64 Python 3.11+ embeddable runtime，并能访问 PyPA、PyPI 和 PyTorch CPU wheel 源。此前放在 `desktop/release/python-embed/runtime` 的运行时会自动复制过来。
+
 ---
 
 ## 3. 冒烟（全部通过）

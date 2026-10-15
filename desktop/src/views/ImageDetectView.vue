@@ -15,6 +15,9 @@ interface ModelItem {
   model_id: string
   name: string
   loaded: boolean
+  weights_available?: boolean
+  downloadable?: boolean
+  runtime_available?: boolean
   class_list: Array<{ class_id: number; class_name: string; display_name: string }>
 }
 
@@ -34,6 +37,8 @@ const objects = ref<BoxObject[]>([])
 const selectedId = ref<number | null>(null)
 const models = ref<ModelItem[]>([])
 const selectedModels = ref<string[]>([])
+const downloadingModelId = ref('')
+let stopDownloadProgress: (() => void) | undefined
 const classFilter = ref<Record<string, string[]>>({})
 const conf = ref(0.45)
 const labelTemplate = ref('{id}:{class}')
@@ -81,7 +86,51 @@ async function loadModels(): Promise<void> {
   }
 }
 
-async function ensureModelLoaded(modelId: string): Promise<void> {
+async function downloadBuiltinModel(modelId: string): Promise<boolean> {
+  if (downloadingModelId.value) return false
+  const model = models.value.find((item) => item.model_id === modelId)
+  if (!model) return false
+
+  downloadingModelId.value = modelId
+  errorMsg.value = ''
+  infoMsg.value = `正在下载 ${model.name} 权重…`
+  try {
+    const resp = await wsClient.request('model.downloadBuiltin', { model_ids: [modelId] }, 10 * 60 * 1000)
+    const results = (resp.data as {
+      results?: Array<{ model_id: string; ok: boolean; error?: string }>
+    }).results || []
+    const result = results.find((item) => item.model_id === modelId)
+    await loadModels()
+    if (!result?.ok) {
+      errorMsg.value = `模型权重下载失败：${result?.error || '后端没有返回下载结果'}`
+      infoMsg.value = ''
+      return false
+    }
+    infoMsg.value = `${model.name} 权重已下载，可以开始推理。`
+    return true
+  } catch (e) {
+    setErr(e)
+    infoMsg.value = ''
+    return false
+  } finally {
+    downloadingModelId.value = ''
+  }
+}
+
+async function ensureModelLoaded(modelId: string): Promise<boolean> {
+  const model = models.value.find((item) => item.model_id === modelId)
+  if (model?.runtime_available === false) {
+    errorMsg.value = '当前安装包缺少 YOLO 推理组件，请安装包含 CPU 推理环境的新版安装包。'
+    return false
+  }
+  if (model?.weights_available === false) {
+    if (!model.downloadable) {
+      errorMsg.value = `模型「${model.name}」缺少权重文件，请先在模型管理中导入对应权重。`
+      return false
+    }
+    if (!(await downloadBuiltinModel(modelId))) return false
+  }
+
   try {
     const resp = await wsClient.request('model.load', { model_ids: [modelId] })
     const item = ((resp.data as { models?: ModelItem[] }).models ?? [])[0]
@@ -90,8 +139,10 @@ async function ensureModelLoaded(modelId: string): Promise<void> {
       if (idx >= 0) models.value[idx] = { ...models.value[idx], ...item }
     }
     await loadModels()
+    return true
   } catch (e) {
     setErr(e)
+    return false
   }
 }
 
@@ -628,6 +679,10 @@ async function onGlobalDrop(ev: DragEvent): Promise<void> {
 
 onMounted(() => {
   void loadModels()
+  stopDownloadProgress = wsClient.on('model.download.progress', (msg) => {
+    const data = msg.data as { model_id?: string; message?: string } | undefined
+    if (data?.model_id === downloadingModelId.value && data.message) infoMsg.value = data.message
+  })
   window.addEventListener('paste', handlePaste)
   window.addEventListener('dragover', onGlobalDragOver)
   window.addEventListener('drop', onGlobalDrop)
@@ -711,6 +766,7 @@ onMounted(() => {
   })
 })
 onUnmounted(() => {
+  stopDownloadProgress?.()
   window.removeEventListener('paste', handlePaste)
   window.removeEventListener('dragover', onGlobalDragOver)
   window.removeEventListener('drop', onGlobalDrop)
@@ -786,17 +842,36 @@ onUnmounted(() => {
         <section class="panel">
           <div class="panel-head"><h2 class="panel-title">{{ t('workbench.modelSelect') }}</h2></div>
           <div class="panel-body models">
-            <label v-for="m in models" :key="m.model_id" class="row">
-              <input
-                type="checkbox"
-                :checked="selectedModels.includes(m.model_id)"
-                @change="onToggleModel(m.model_id, ($event.target as HTMLInputElement).checked)"
-              />
-              <span class="name">{{ m.name }}</span>
-              <span class="badge" :class="m.loaded ? 'ok' : ''">
-                {{ m.loaded ? t('models.loaded') : t('models.unloaded') }}
-              </span>
-            </label>
+            <div v-for="m in models" :key="m.model_id" class="row">
+              <label class="model-select">
+                <input
+                  type="checkbox"
+                  :checked="selectedModels.includes(m.model_id)"
+                  @change="onToggleModel(m.model_id, ($event.target as HTMLInputElement).checked)"
+                />
+                <span class="name">{{ m.name }}</span>
+              </label>
+              <div class="model-status">
+                <span
+                  class="badge"
+                  :class="{
+                    ok: m.loaded && m.runtime_available !== false && m.weights_available !== false,
+                    missing: m.runtime_available === false || m.weights_available === false
+                  }"
+                >
+                  {{ m.runtime_available === false ? '推理组件缺失' : m.weights_available === false ? (m.downloadable ? '未下载' : '缺少权重') : m.loaded ? t('models.loaded') : t('models.unloaded') }}
+                </span>
+                <button
+                  v-if="m.weights_available === false && m.downloadable"
+                  type="button"
+                  class="ghost mini download-btn"
+                  :disabled="Boolean(downloadingModelId) || m.runtime_available === false"
+                  @click.stop="downloadBuiltinModel(m.model_id)"
+                >
+                  {{ downloadingModelId === m.model_id ? '下载中…' : '下载' }}
+                </button>
+              </div>
+            </div>
           </div>
         </section>
 
@@ -999,15 +1074,36 @@ onUnmounted(() => {
 }
 .row {
   display: flex;
-  gap: 8px;
+  gap: 6px;
   align-items: center;
   font-size: var(--text-sm);
 }
+.model-select {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+}
 .name {
   flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.model-status {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+.badge.missing {
+  color: var(--warning, #a76500);
+  background: var(--warning-soft, #fff3d6);
+}
+.download-btn {
+  padding: 2px 5px;
 }
 .mini {
   padding: 2px 6px;

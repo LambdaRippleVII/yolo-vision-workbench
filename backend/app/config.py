@@ -35,7 +35,7 @@ class AppConfig:
     models_dir: Path
     projects_dir: Path
     protocol_version: int = 1
-    app_version: str = "0.1.0"
+    app_version: str = "0.2.4"
 
     @property
     def ws_path(self) -> str:

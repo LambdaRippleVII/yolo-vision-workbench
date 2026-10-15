@@ -28,6 +28,9 @@ const pingMs = ref<number | null>(null)
 const logs = ref<LogLine[]>([])
 const consoleExpanded = ref(false)
 const projectLabel = ref('')
+let activeWsUrl = ''
+let wsUrlRequestId = 0
+let wsListenersRegistered = false
 
 function applyBackendStatus(s: {
   status: string
@@ -70,38 +73,54 @@ function pushLog(level: string, source: string, message: string): void {
 }
 
 function connectWs(url: string): void {
+  if (activeWsUrl === url) return
+  activeWsUrl = url
   wsState.value = 'connecting'
+  if (!wsListenersRegistered) {
+    wsClient.on('client.open', () => {
+      wsState.value = 'connected'
+      pushLog('INFO', 'ws', '通信已连接')
+      void checkHealth()
+    })
+    wsClient.on('client.close', () => {
+      wsState.value = 'disconnected'
+      pingMs.value = null
+    })
+    wsClient.on('system.hello', (msg: Envelope) => {
+      const ver = (msg.data as { server_version?: string }).server_version ?? ''
+      pushLog('INFO', 'ws', `后端服务已握手（v${ver}）`)
+      void checkHealth()
+      void refreshProjectLabel()
+    })
+    wsClient.on('log.message', (msg: Envelope) => {
+      const d = msg.data as { level?: string; message?: string; logger?: string }
+      pushLog(d.level || 'INFO', d.logger || 'backend', d.message || '')
+    })
+    wsClient.on('pong', () => {
+      /* keep-alive */
+    })
+    wsClient.on('project.open', () => void refreshProjectLabel())
+    wsClient.on('project.create', () => void refreshProjectLabel())
+    wsListenersRegistered = true
+  }
   wsClient.connect(url)
+}
 
-  wsClient.on('client.open', () => {
-    wsState.value = 'connected'
-    pushLog('INFO', 'ws', '通信已连接')
-  })
-  wsClient.on('client.close', () => {
-    wsState.value = 'disconnected'
-    pingMs.value = null
-  })
-  wsClient.on('system.hello', (msg: Envelope) => {
-    const ver = (msg.data as { server_version?: string }).server_version ?? ''
-    pushLog('INFO', 'ws', `后端服务已握手（v${ver}）`)
-    void checkHealth()
-  })
-  wsClient.on('log.message', (msg: Envelope) => {
-    const d = msg.data as { level?: string; message?: string; logger?: string }
-    pushLog(d.level || 'INFO', d.logger || 'backend', d.message || '')
-  })
-  // Use actual port from supervisor status for health checks
-  wsClient.on('client.open', () => {
-    wsState.value = 'connected'
-    pushLog('INFO', 'ws', '通信已连接')
-    void checkHealth()
-  })
-  wsClient.on('pong', () => {
-    /* keep-alive */
-  })
-  wsClient.on('project.open', () => void refreshProjectLabel())
-  wsClient.on('project.create', () => void refreshProjectLabel())
-  wsClient.on('system.hello', () => void refreshProjectLabel())
+async function connectToBackend(): Promise<void> {
+  const api = window.yoloStudio
+  if (!api) return
+  if (backend.value.status !== 'ready' && backend.value.status !== 'reused') {
+    wsUrlRequestId += 1
+    return
+  }
+
+  const requestId = ++wsUrlRequestId
+  try {
+    const wsUrl = await api.getWsUrl()
+    if (requestId === wsUrlRequestId) connectWs(wsUrl)
+  } catch (e) {
+    if (requestId === wsUrlRequestId) pushLog('ERROR', 'ws', String(e))
+  }
 }
 
 async function checkHealth(): Promise<void> {
@@ -136,6 +155,7 @@ async function onRestart(): Promise<void> {
   pushLog('WARN', 'supervisor', '正在重启后端服务…')
   const st = await api.restartBackend()
   applyBackendStatus(st)
+  await connectToBackend()
   pushLog('INFO', 'supervisor', `后端服务状态：${st.status}`)
 }
 
@@ -146,8 +166,15 @@ async function bootstrap(): Promise<void> {
   const api = window.yoloStudio
   if (api) {
     api.onBackendStatus((s) => {
+      const endpointChanged = backend.value.host !== s.host || backend.value.port !== s.port
       applyBackendStatus(s)
+      if (endpointChanged && activeWsUrl) {
+        activeWsUrl = ''
+        wsClient.close()
+        wsState.value = 'connecting'
+      }
       pushLog('INFO', 'supervisor', `后端服务状态：${s.status}${s.port ? ` :${s.port}` : ''}${s.message ? ` · ${s.message}` : ''}`)
+      void connectToBackend()
     })
     api.onBackendLog((e) => pushLog(e.level, e.source, e.message))
     api.onMenuAction?.((payload) => {
@@ -162,8 +189,7 @@ async function bootstrap(): Promise<void> {
 
     const st = await api.getBackendStatus()
     applyBackendStatus(st)
-    const wsUrl = await api.getWsUrl()
-    connectWs(wsUrl)
+    await connectToBackend()
   } else {
     backend.value = {
       status: 'starting',
