@@ -653,4 +653,19 @@ function apply(): void {
   background: var(--bg-inset);
   color: var(--text-primary);
 }
+
+.dialog,
+.style-dialog {
+  animation: dialog-pop 260ms var(--spring) both;
+}
+@keyframes dialog-pop {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
 </style>

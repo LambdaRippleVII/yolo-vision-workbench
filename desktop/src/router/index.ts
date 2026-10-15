@@ -9,6 +9,17 @@ import TasksView from '../views/TasksView.vue'
 import DevicesView from '../views/DevicesView.vue'
 import SettingsView from '../views/SettingsView.vue'
 
+export function withViewTransition(fn: () => void): void {
+  const g = globalThis as unknown as {
+    startViewTransition?: (cb: () => void) => void
+  }
+  if (typeof g.startViewTransition === 'function') {
+    g.startViewTransition(fn)
+  } else {
+    fn()
+  }
+}
+
 export const router = createRouter({
   history: createWebHashHistory(),
   routes: [
@@ -35,4 +46,9 @@ export const router = createRouter({
     { path: '/workbench', redirect: '/image' },
     { path: '/:pathMatch(.*)*', redirect: '/image' }
   ]
+})
+
+router.afterEach(() => {
+  const el = document.querySelector('.shell-main') as HTMLElement | null
+  if (el) el.style.setProperty('view-transition-name', 'shell-main')
 })

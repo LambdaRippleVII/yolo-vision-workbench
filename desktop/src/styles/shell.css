@@ -491,3 +491,93 @@
   place-items: center;
   border-radius: var(--radius-md);
 }
+
+/* ── Overdrive: view transitions / stagger / dialogs ── */
+::view-transition-old(shell-main),
+::view-transition-new(shell-main) {
+  animation-duration: 220ms;
+  animation-timing-function: var(--ease);
+}
+
+.shell-main > .page {
+  animation: page-enter var(--dur-mid) var(--ease) both;
+}
+
+@keyframes page-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.empty-state {
+  animation: empty-in 320ms var(--spring) both;
+}
+
+@keyframes empty-in {
+  from {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.list-enter,
+.result-item,
+.table tbody tr,
+.thumb,
+.cell {
+  animation: item-in 220ms var(--ease) both;
+}
+
+.result-item:nth-child(n),
+.table tbody tr:nth-child(n) {
+  animation-delay: calc(12ms * min(var(--stagger-i, 0), 12));
+}
+
+@keyframes item-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+button {
+  transition:
+    background var(--dur-fast) var(--ease),
+    border-color var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease),
+    transform var(--dur-spring) var(--spring),
+    box-shadow var(--dur-fast) var(--ease);
+}
+
+button:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+button.primary:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-sm);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shell-main > .page,
+  .empty-state,
+  .result-item,
+  .table tbody tr,
+  .thumb,
+  .cell {
+    animation: none !important;
+  }
+}

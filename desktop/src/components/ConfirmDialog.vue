@@ -56,4 +56,19 @@ const emit = defineEmits<{ confirm: []; cancel: [] }>()
   justify-content: flex-end;
   gap: 8px;
 }
+
+.dialog,
+.style-dialog {
+  animation: dialog-pop 260ms var(--spring) both;
+}
+@keyframes dialog-pop {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
 </style>

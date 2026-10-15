@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { withViewTransition } from '../router'
 import Icon from './Icon.vue'
 import { t } from '../locales'
 
@@ -14,7 +15,7 @@ const inferenceItems = computed(() => [
 ])
 
 function go(path: string): void {
-  void router.push(path)
+  withViewTransition(() => { void router.push(path) })
 }
 </script>
 
