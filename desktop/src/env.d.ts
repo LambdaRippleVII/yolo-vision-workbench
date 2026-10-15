@@ -44,6 +44,7 @@ interface YoloStudioBridge {
   saveVideo?: (defaultName?: string) => Promise<string | null>
   saveImage?: (defaultName?: string) => Promise<string | null>
   selectFolder?: () => Promise<string | null>
+  mediaUrl?: (path: string) => Promise<string | null>
   readImageBase64?: (path: string) => Promise<string | null>
   writeTempImage?: (payload: { name?: string; base64?: string; dataUrl?: string }) => Promise<string | null>
   getPathForFile?: (file: File) => string

@@ -99,6 +99,25 @@ async function saveDisplay(): Promise<void> {
   }
 }
 
+async function downloadBuiltin(): Promise<void> {
+  infoMsg.value = '正在拉取内置模型权重…'
+  errorMsg.value = ''
+  try {
+    const resp = await wsClient.request('model.downloadBuiltin', {})
+    const results = (resp.data as { results?: Array<{ model_id: string; ok: boolean; error?: string }> }).results || []
+    const failed = results.filter((r) => !r.ok)
+    await loadList()
+    if (failed.length) {
+      errorMsg.value =
+        '部分模型下载失败：' + failed.map((f) => `${f.model_id}（${f.error}）`).join('；')
+    } else {
+      infoMsg.value = `内置模型权重已就绪（${results.length}）`
+    }
+  } catch (e) {
+    errorMsg.value = formatError(e)
+  }
+}
+
 async function importModel(): Promise<void> {
   const api = window.yoloStudio
   if (!api?.selectModelFile) {
@@ -145,6 +164,7 @@ onMounted(() => {
         <button type="button" class="primary" @click="importModel">
           {{ t('models.import') }}
         </button>
+        <button type="button" class="ghost" @click="downloadBuiltin">{{ t('models.download') }}</button>
         <button type="button" class="ghost" :disabled="loading" @click="loadList">
           {{ t('action.refresh') }}
         </button>

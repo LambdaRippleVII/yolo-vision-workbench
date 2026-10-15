@@ -4,6 +4,7 @@
  */
 import { app, BrowserWindow, dialog, ipcMain, Menu, shell, MenuItemConstructorOptions } from 'electron'
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
+import { pathToFileURL } from 'url'
 import { join, resolve, basename } from 'path'
 import { ProcessSupervisor } from './backend/supervisor'
 
@@ -254,6 +255,14 @@ ipcMain.handle('window:openCamera', () => {
 ipcMain.handle('window:setAlwaysOnTop', (_e, flag: boolean) => {
   const win = BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0]
   win?.setAlwaysOnTop(Boolean(flag))
+})
+
+ipcMain.handle('fs:mediaUrl', (_e, filePath: string) => {
+  try {
+    return pathToFileURL(String(filePath)).href
+  } catch {
+    return null
+  }
 })
 
 ipcMain.handle('dialog:selectImage', async () => {

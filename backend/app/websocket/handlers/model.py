@@ -155,7 +155,26 @@ def register_model_handlers(hub: WebSocketHub, model_manager) -> None:
                 break
         return make_message("model.import", {"ok": True, "model": payload}, id_=msg.get("id"))
 
+
+    async def on_download(msg: dict[str, Any], ctx: ConnectionContext) -> dict[str, Any]:
+        data = msg.get("data") or {}
+        from app.model_manager.downloader import HUB_NAME, download_weight, _default_filename
+
+        model_ids = data.get("model_ids") or list(HUB_NAME.keys())
+        results = []
+        for mid in [str(x) for x in model_ids]:
+            dest = model_manager._models_dir / "examples" / "weights" / _default_filename(mid)
+            try:
+                download_weight(mid, dest)
+                results.append({"model_id": mid, "ok": True, "path": str(dest)})
+            except Exception as exc:  # noqa: BLE001
+                results.append({"model_id": mid, "ok": False, "error": str(exc)})
+        model_manager.refresh()
+        model_manager.init_class_lists()
+        return make_message("model.downloadBuiltin", {"ok": True, "results": results}, id_=msg.get("id"))
+
     hub.register("model.list", on_list)
+    hub.register("model.downloadBuiltin", on_download)
     hub.register("model.load", on_load)
     hub.register("model.unload", on_unload)
     hub.register("model.refresh", on_refresh)

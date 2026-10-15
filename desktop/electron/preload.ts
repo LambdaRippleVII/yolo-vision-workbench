@@ -47,6 +47,7 @@ const api = {
   saveImage: (defaultName?: string): Promise<string | null> =>
     ipcRenderer.invoke('dialog:saveImage', defaultName),
   selectFolder: (): Promise<string | null> => ipcRenderer.invoke('dialog:selectFolder'),
+  mediaUrl: (filePath: string): Promise<string | null> => ipcRenderer.invoke('fs:mediaUrl', filePath),
   readImageBase64: (filePath: string): Promise<string | null> =>
     ipcRenderer.invoke('fs:readImageBase64', filePath),
   writeTempImage: (payload: { name?: string; base64?: string; dataUrl?: string }): Promise<string | null> =>

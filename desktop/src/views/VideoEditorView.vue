@@ -129,7 +129,8 @@ async function pickVideo(): Promise<void> {
 
 async function setVideo(path: string): Promise<void> {
   videoPath.value = path
-  videoUrl.value = 'file:///' + path.replace(/\\/g, '/')
+  const api = window.yoloStudio
+  videoUrl.value = (api?.mediaUrl ? await api.mediaUrl(path) : 'file:///' + path.replace(/\\/g, '/')) || ''
   imageUrl.value = ''
   objects.value = []
   timeline.value = []
@@ -421,13 +422,16 @@ async function handlePaste(ev: ClipboardEvent): Promise<void> {
   if (p && looksLikeVideo(p)) await setVideo(p)
 }
 
-function openFromRoute(): void {
+async function openFromRoute(): Promise<void> {
   const hash = window.location.hash
   const q = hash.includes('?') ? hash.split('?')[1] : ''
   const params = new URLSearchParams(q || '')
   taskId.value = params.get('task') || sessionStorage.getItem('editor_task_id') || taskId.value
   videoPath.value = params.get('video') || sessionStorage.getItem('editor_video_path') || videoPath.value
-  if (videoPath.value) videoUrl.value = 'file:///' + videoPath.value.replace(/\\/g, '/')
+  if (videoPath.value) {
+    const api = window.yoloStudio
+    videoUrl.value = (api?.mediaUrl ? await api.mediaUrl(videoPath.value) : 'file:///' + videoPath.value.replace(/\\/g, '/')) || ''
+  }
   if (taskId.value) void loadTimeline()
 }
 
@@ -436,7 +440,7 @@ watch(timelineStep, () => {
 })
 
 onMounted(() => {
-  openFromRoute()
+  void openFromRoute()
   void loadModels()
   window.addEventListener('dragenter', (e) => {
     e.preventDefault()
