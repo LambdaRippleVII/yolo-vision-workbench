@@ -41,13 +41,14 @@ npm run dev
 
 ### 安装版模型
 
-- 安装包随附 CPU 版 PyTorch 与 Ultralytics，不要求用户另装 Python。
+- 安装包随附 Python 运行时，不要求用户另装 Python；首次启动时，软件使用该运行时在用户目录安装后端依赖、CPU 版 PyTorch 和 Ultralytics。
+- 首次初始化默认使用清华 PyPI 镜像，失败时依次尝试阿里云和中科大镜像；仍失败时可在初始化界面选择其他内置镜像或填写自定义 PyPI `/simple` 地址后重试。
 - `.pt` 权重不放进安装包。第一次使用时，在模型列表旁点击「下载」；权重保存在用户数据目录，升级软件后仍可复用。
 - 下载进度和失败原因会显示在界面中。官方没有提供可下载权重的配置需要通过「添加模型」导入本地权重。
 
 ### 发行构建
 
-在 `desktop/` 下运行 `npm run dist`。构建会先将 CPU 推理依赖安装到 `desktop/vendor/python-embed/runtime`，因此构建机需要准备 Windows x64 Python 3.11+ embeddable runtime，并能访问 PyPA、PyPI 和 PyTorch CPU wheel 源。此前放在 `desktop/release/python-embed/runtime` 的运行时会自动复制过来。
+在 `desktop/` 下运行 `npm run dist`。构建会把 Windows x64 Python 3.11+ embeddable runtime 放入安装包；CPU 推理依赖由用户首次启动时安装到用户目录。请先把 embeddable runtime 放在 `desktop/vendor/python-embed/runtime`；此前放在 `desktop/release/python-embed/runtime` 的运行时会自动复制过来。若构建准备阶段需要修复运行时中缺少的 pip 或 Windows 安装组件，构建机需要能访问 PyPA/PyPI。
 
 ---
 

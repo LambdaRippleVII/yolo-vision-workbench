@@ -5,6 +5,7 @@ import { pathToFileURL } from 'url'
 import { join, resolve, basename } from 'path'
 import { ProcessSupervisor } from './backend/supervisor'
 import { RuntimeSetup, type RuntimeSetupStatus } from './runtime-setup'
+import { DEFAULT_PACKAGE_SOURCE, type PackageSourceSelection } from '../shared/package-source'
 
 // 窗口标题、系统菜单和应用元数据共用的产品名称。
 const PRODUCT_NAME = 'YOLO 视觉工作台'
@@ -209,6 +210,20 @@ let runtimeSetup: RuntimeSetup | null = null
 // 共享正在进行的后端启动请求，防止菜单重启与启动流程相互覆盖。
 let backendStartPromise: Promise<void> | null = null
 
+// 当前主窗口拥有的摄像头独立窗口；用于把关闭状态准确同步回发起页面。
+let cameraPopout: {
+  win: BrowserWindow
+  owner: BrowserWindow | null
+  streamId: string
+} | null = null
+
+function notifyCameraPopoutState(
+  owner: BrowserWindow | null,
+  state: { open: boolean; streamId: string }
+): void {
+  if (owner && !owner.isDestroyed()) owner.webContents.send('window:cameraState', state)
+}
+
 function currentRuntimeStatus(): RuntimeSetupStatus {
   return (
     runtimeSetup?.getStatus() ?? {
@@ -217,7 +232,8 @@ function currentRuntimeStatus(): RuntimeSetupStatus {
       step: app.isPackaged ? '准备运行环境' : '开发环境',
       message: app.isPackaged ? '正在检查随包 Python 运行环境…' : '开发环境由当前 Python 配置提供。',
       error: '',
-      details: []
+      details: [],
+      packageSource: { ...DEFAULT_PACKAGE_SOURCE }
     }
   )
 }
@@ -333,11 +349,19 @@ ipcMain.handle('backend:restart', async () => {
   return supervisor.getStatus()
 })
 ipcMain.handle('runtime:getStatus', () => currentRuntimeStatus())
-ipcMain.handle('runtime:retry', async () => {
+ipcMain.handle('runtime:retry', async (_event, packageSource?: PackageSourceSelection) => {
+  try {
+    if (packageSource) await runtimeSetup?.setPackageSource(packageSource)
+  } catch (error) {
+    // 镜像配置写入失败时，直接更新初始化错误，避免界面继续显示旧错误。
+    await runtimeSetup?.markFailed(error)
+    return currentRuntimeStatus()
+  }
+
   try {
     await startBackendWithRuntime(true)
   } catch {
-    /* 当前状态对象已经包含详细错误，渲染进程会直接展示。 */
+    // startBackendWithRuntime 会把初始化或服务启动错误写入运行时状态。
   }
   return currentRuntimeStatus()
 })
@@ -356,10 +380,32 @@ ipcMain.handle('dialog:selectModelFile', async () => {
   return result.filePaths[0]
 })
 
-ipcMain.handle('window:openCamera', () => {
+ipcMain.handle('window:openCamera', async (event, streamIdValue: string) => {
+  const streamId = String(streamIdValue || '').trim()
+  if (!streamId) throw new Error('没有可分离的摄像头画面，请先打开摄像头。')
+
+  const owner = BrowserWindow.fromWebContents(event.sender)
+  if (cameraPopout && !cameraPopout.win.isDestroyed()) {
+    if (cameraPopout.owner === owner && cameraPopout.streamId === streamId) {
+      cameraPopout.win.focus()
+      notifyCameraPopoutState(owner, { open: true, streamId })
+      return
+    }
+    const previous = cameraPopout
+    cameraPopout = null
+    notifyCameraPopoutState(previous.owner, { open: false, streamId: previous.streamId })
+    previous.win.close()
+  }
+
   const win = new BrowserWindow({
     width: 960,
     height: 640,
+    minWidth: 360,
+    minHeight: 240,
+    resizable: true,
+    maximizable: true,
+    fullscreenable: true,
+    parent: owner && !owner.isDestroyed() ? owner : undefined,
     title: '摄像头预览',
     icon: appIconPath(),
     autoHideMenuBar: true,
@@ -370,15 +416,32 @@ ipcMain.handle('window:openCamera', () => {
       sandbox: false
     }
   })
+  const record = { win, owner, streamId }
+  cameraPopout = record
+  win.on('closed', () => {
+    notifyCameraPopoutState(record.owner, { open: false, streamId: record.streamId })
+    if (cameraPopout === record) cameraPopout = null
+  })
   const base =
     process.env.ELECTRON_RENDERER_URL ||
     `file://${join(__dirname, '../renderer/index.html')}`
-  void win.loadURL(`${base}#/camera-popout`)
+  try {
+    await win.loadURL(`${base}#/camera-popout?stream_id=${encodeURIComponent(streamId)}`)
+    notifyCameraPopoutState(owner, { open: true, streamId })
+  } catch (error) {
+    if (!win.isDestroyed()) win.close()
+    throw error
+  }
 })
 
-ipcMain.handle('window:setAlwaysOnTop', (_e, flag: boolean) => {
-  const win = BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0]
+ipcMain.handle('window:setAlwaysOnTop', (event, flag: boolean) => {
+  const win = BrowserWindow.fromWebContents(event.sender)
   win?.setAlwaysOnTop(Boolean(flag))
+})
+
+ipcMain.handle('window:closeCamera', (event) => {
+  const owner = BrowserWindow.fromWebContents(event.sender)
+  if (cameraPopout?.owner === owner && !cameraPopout.win.isDestroyed()) cameraPopout.win.close()
 })
 
 ipcMain.handle('fs:mediaUrl', (_e, filePath: string) => {

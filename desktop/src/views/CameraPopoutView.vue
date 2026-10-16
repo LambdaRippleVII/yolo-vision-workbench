@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import Icon from '../components/Icon.vue'
 import { wsClient } from '../api/ws'
 import { formatError } from '../utils/errors'
@@ -9,6 +10,9 @@ const imageUrl = ref('')
 const pinned = ref(false)
 const errorMsg = ref('')
 const zoomMode = ref<'fit' | 'fill'>('fit')
+const route = useRoute()
+// 只显示发起独立窗口时指定的摄像头流，避免混入其他页面的帧。
+const streamId = computed(() => String(route.query.stream_id || ''))
 
 const imgStyle = computed(() => ({
   objectFit: (zoomMode.value === 'fill' ? 'cover' : 'contain') as 'cover' | 'contain'
@@ -27,10 +31,13 @@ function toggleFullscreen(): void {
 
 onMounted(() => {
   wsClient.on('stream.frame', (msg: { data?: Record<string, unknown> }) => {
-    const d = (msg.data || {}) as { data_url?: string }
+    const d = (msg.data || {}) as { data_url?: string; stream_id?: string }
+    if (!streamId.value || d.stream_id !== streamId.value) return
     if (d.data_url) imageUrl.value = d.data_url
   })
   wsClient.on('stream.error', (msg: { data?: Record<string, unknown> }) => {
+    const stream = String((msg.data as { stream_id?: string })?.stream_id || '')
+    if (!streamId.value || stream !== streamId.value) return
     errorMsg.value = formatError((msg.data as { message?: string })?.message || '摄像头错误')
   })
 })
@@ -41,26 +48,30 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <!-- 独立预览窗口主体，保持画面占满可用区域。 -->
+  <!-- 独立预览窗口主体只保留摄像头画面，控制按钮覆盖在画面上方。 -->
   <div class="popout">
-    <div class="bar">
+    <div class="controls">
       <button
         type="button"
-        class="ghost"
+        class="control"
         :class="{ on: pinned }"
-        :title="'图钉置顶'"
-        :aria-label="'图钉置顶'"
+        title="置顶窗口"
+        aria-label="置顶窗口"
         :aria-pressed="pinned"
         @click="togglePin"
       >
         <Icon name="pin" :size="16" />
       </button>
-      <button type="button" class="ghost" @click="zoomMode = zoomMode === 'fit' ? 'fill' : 'fit'">
-        {{ zoomMode === 'fit' ? '适应窗口' : '铺满窗口' }}
+      <button
+        type="button"
+        class="control"
+        :title="zoomMode === 'fit' ? '铺满窗口' : '适应窗口'"
+        :aria-label="zoomMode === 'fit' ? '铺满窗口' : '适应窗口'"
+        @click="zoomMode = zoomMode === 'fit' ? 'fill' : 'fit'"
+      >
+        {{ zoomMode === 'fit' ? '铺' : '适' }}
       </button>
-      <button type="button" class="ghost" @click="toggleFullscreen">全屏</button>
-      <span class="spacer" />
-      <span class="hint">摄像头画面</span>
+      <button type="button" class="control" title="全屏" aria-label="全屏" @click="toggleFullscreen">全</button>
     </div>
     <div class="frame">
       <img v-if="imageUrl" :src="imageUrl" :style="imgStyle" alt="摄像头预览" />
@@ -72,42 +83,45 @@ onUnmounted(() => {
 
 <style scoped>
 .popout {
-  display: flex;
-  flex-direction: column;
+  position: relative;
   height: 100%;
   background: var(--bg-app);
   color: var(--text-primary);
 }
-.bar {
+.controls {
+  position: absolute;
+  z-index: 2;
+  top: 8px;
+  right: 8px;
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 4px 8px;
-  background: var(--bg-chrome);
-  border-bottom: 1px solid var(--border);
-  -webkit-app-region: drag;
-  flex: 0 0 36px;
+  opacity: 0.2;
+  transition: opacity 150ms var(--ease);
 }
-.bar button {
-  -webkit-app-region: no-drag;
+.popout:hover .controls,
+.controls:focus-within {
+  opacity: 1;
+}
+.control {
+  min-width: 28px;
+  height: 28px;
+  padding: 0 7px;
+  border: 1px solid color-mix(in srgb, var(--border-strong) 70%, transparent);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--bg-chrome) 88%, transparent);
   color: inherit;
-  border-color: transparent;
-  background: transparent;
+  cursor: pointer;
 }
-.bar button.on {
+.control:hover,
+.control.on {
   color: var(--accent-ink);
-}
-.spacer {
-  flex: 1;
-}
-.hint {
-  font-size: 11px;
-  opacity: 0.7;
+  background: var(--accent-soft);
 }
 .frame {
-  flex: 1;
-  min-height: 0;
   position: relative;
+  width: 100%;
+  height: 100%;
   background: var(--bg-canvas);
 }
 .frame img {

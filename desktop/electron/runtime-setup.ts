@@ -4,6 +4,12 @@ import { EventEmitter } from 'events'
 import { promises as fs, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { StringDecoder } from 'string_decoder'
+import {
+  DEFAULT_PACKAGE_SOURCE,
+  getPackageSourceAttempts,
+  normalizePackageSource,
+  type PackageSourceSelection
+} from '../shared/package-source'
 
 // 就绪标记的结构版本；变更依赖校验规则时应同步递增。
 const RUNTIME_SCHEMA_VERSION = 1
@@ -11,8 +17,6 @@ const RUNTIME_SCHEMA_VERSION = 1
 const PIP_BOOTSTRAP_URL = 'https://bootstrap.pypa.io/get-pip.py'
 // CPU 版 PyTorch 的官方 wheel 源。
 const PYTORCH_CPU_INDEX = 'https://download.pytorch.org/whl/cpu'
-// 安装 PyTorch 以外 Python 包时使用的默认包索引。
-const PYPI_INDEX = 'https://pypi.org/simple'
 // pip 在 Windows 上生成命令行入口时需要这些 distlib 启动器资源。
 const DISTLIB_LAUNCHERS = ['t32.exe', 't64.exe', 't64-arm.exe', 'w32.exe', 'w64.exe', 'w64-arm.exe'] as const
 
@@ -25,6 +29,7 @@ export interface RuntimeSetupStatus {
   message: string
   error: string
   details: string[]
+  packageSource: PackageSourceSelection
 }
 
 export interface RuntimeSetupOptions {
@@ -40,6 +45,8 @@ export class RuntimeSetup extends EventEmitter {
   private readonly installDir: string
   private readonly pythonPath: string
   private readonly readyMarkerPath: string
+  private readonly packageSourcePath: string
+  private packageSource: PackageSourceSelection
   private details: string[] = []
   private process: ChildProcess | null = null
   private pending: Promise<string> | null = null
@@ -51,18 +58,40 @@ export class RuntimeSetup extends EventEmitter {
     this.installDir = join(options.userDataDir, 'python-runtime')
     this.pythonPath = join(this.installDir, 'python.exe')
     this.readyMarkerPath = join(this.installDir, 'runtime-ready.json')
+    this.packageSourcePath = join(options.userDataDir, 'package-source.json')
+    this.packageSource = this.readPackageSource()
     this.status = {
       managed: options.managed,
       phase: options.managed ? 'initializing' : 'ready',
       step: options.managed ? '准备运行环境' : '开发环境',
       message: options.managed ? '正在检查随包 Python 运行环境…' : '开发环境由当前 Python 配置提供。',
       error: '',
-      details: []
+      details: [],
+      packageSource: { ...this.packageSource }
     }
   }
 
   getStatus(): RuntimeSetupStatus {
-    return { ...this.status, details: [...this.status.details] }
+    return {
+      ...this.status,
+      details: [...this.status.details],
+      packageSource: { ...this.packageSource }
+    }
+  }
+
+  /**
+   * 保存用户选择的包镜像源，后续初始化重试会优先使用该地址。
+   *
+   * @param value 来自渲染进程的镜像源选择对象。
+   * @returns 校验并保存后的镜像源选择。
+   */
+  async setPackageSource(value: unknown): Promise<PackageSourceSelection> {
+    const next = normalizePackageSource(value)
+    await fs.mkdir(this.options.userDataDir, { recursive: true })
+    await fs.writeFile(this.packageSourcePath, JSON.stringify(next, null, 2), 'utf8')
+    this.packageSource = next
+    this.update({ packageSource: { ...next } })
+    return { ...next }
   }
 
   initialize(): Promise<string> {
@@ -94,6 +123,14 @@ export class RuntimeSetup extends EventEmitter {
 
   terminate(): void {
     this.process?.kill()
+  }
+
+  private readPackageSource(): PackageSourceSelection {
+    try {
+      return normalizePackageSource(JSON.parse(readFileSync(this.packageSourcePath, 'utf8')))
+    } catch {
+      return { ...DEFAULT_PACKAGE_SOURCE }
+    }
   }
 
   private async initializeInternal(): Promise<string> {
@@ -291,12 +328,38 @@ export class RuntimeSetup extends EventEmitter {
       if (!response.ok) throw new Error(`下载 pip 引导程序失败：HTTP ${response.status}`)
       bootstrapPath = join(this.options.userDataDir, 'get-pip.py')
       writeFileSync(bootstrapPath, Buffer.from(await response.arrayBuffer()))
-      await this.runInstallerProcess(
-        this.pythonPath,
-        [bootstrapPath, '--disable-pip-version-check'],
-        '2/5 · 准备安装工具',
-        '正在安装 pip…'
-      )
+      const sources = getPackageSourceAttempts(this.packageSource)
+      let lastError: unknown
+      for (let index = 0; index < sources.length; index += 1) {
+        const source = sources[index]
+        const message = `正在安装 pip…（${source.label}）`
+        if (index > 0) this.addDetail(`正在切换到${source.label}继续安装 pip。`)
+        this.update({ phase: 'initializing', step: '2/5 · 准备安装工具', message })
+        try {
+          await this.runInstallerProcess(
+            this.pythonPath,
+            [
+              bootstrapPath,
+              '--disable-pip-version-check',
+              '--no-input',
+              '--retries',
+              '1',
+              '--timeout',
+              '15',
+              '--index-url',
+              source.indexUrl
+            ],
+            '2/5 · 准备安装工具',
+            message
+          )
+          lastError = null
+          break
+        } catch (error) {
+          lastError = error
+          this.addDetail(`${source.label}安装 pip 失败。`)
+        }
+      }
+      if (lastError) throw lastError
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       throw new Error(`无法准备 pip。请检查网络连接后重试。${message ? `\n${message}` : ''}`)
@@ -321,13 +384,9 @@ export class RuntimeSetup extends EventEmitter {
     await fs.mkdir(repairDir, { recursive: true })
     try {
       // 只下载 wheel，不执行安装，因此不会触发当前缺失启动器的问题。
-      await this.runInstallerProcess(
-        this.pythonPath,
+      await this.runPipWithSourceFallback(
         [
-          '-m',
-          'pip',
           'download',
-          '--disable-pip-version-check',
           '--no-input',
           '--no-cache-dir',
           '--no-deps',
@@ -383,31 +442,84 @@ export class RuntimeSetup extends EventEmitter {
     if (cpuCheck.status === 0) return
 
     // 即使已有 torch，也确认其为 CPU 构建，避免安装包意外依赖 CUDA 环境。
+    const mirrors = getPackageSourceAttempts(this.packageSource)
     const args = [
       '-m',
       'pip',
-      'install',
       '--disable-pip-version-check',
+      '--retries',
+      '1',
+      '--timeout',
+      '15',
+      'install',
       '--no-input',
       '--progress-bar',
       'on',
       '--index-url',
       PYTORCH_CPU_INDEX,
-      '--extra-index-url',
-      PYPI_INDEX,
       '--force-reinstall'
     ]
+    for (const mirror of mirrors) args.push('--extra-index-url', mirror.indexUrl)
     args.push('torch>=2.4.0', 'torchvision>=0.19.0')
     await this.runInstallerProcess(this.pythonPath, args, '3/5 · 安装 CPU 推理环境', '正在下载 CPU 版 PyTorch…')
   }
 
   private runPipInstall(requirements: string[]): Promise<void> {
-    return this.runInstallerProcess(
-      this.pythonPath,
-      ['-m', 'pip', 'install', '--disable-pip-version-check', '--no-input', '--progress-bar', 'on', ...requirements],
+    return this.runPipWithSourceFallback(
+      ['install', '--no-input', '--progress-bar', 'on', ...requirements],
       this.status.step,
       this.status.message
     )
+  }
+
+  /**
+   * 按首选源执行 pip 安装或下载，并在失败时依次回退到其他可用镜像。
+   *
+   * @param args pip 子命令及对应参数。
+   * @param step 当前初始化步骤标题。
+   * @param initialMessage 当前安装阶段的提示文案。
+   * @returns 所有包下载或安装成功时完成。
+   */
+  private async runPipWithSourceFallback(args: string[], step: string, initialMessage: string): Promise<void> {
+    const sources = getPackageSourceAttempts(this.packageSource)
+    const [command, ...commandArgs] = args
+    if (command !== 'install' && command !== 'download') {
+      throw new Error(`不支持的 pip 子命令：${command || '空命令'}`)
+    }
+    let lastError: unknown
+    for (let index = 0; index < sources.length; index += 1) {
+      const source = sources[index]
+      const message = `${initialMessage}（${source.label}）`
+      if (index > 0) {
+        this.addDetail(`正在切换到${source.label}继续安装。`)
+      }
+      this.update({ phase: 'initializing', step, message })
+      try {
+        await this.runInstallerProcess(
+          this.pythonPath,
+          [
+            '-m',
+            'pip',
+            '--disable-pip-version-check',
+            '--retries',
+            '1',
+            '--timeout',
+            '15',
+            command,
+            '--index-url',
+            source.indexUrl,
+            ...commandArgs
+          ],
+          step,
+          message
+        )
+        return
+      } catch (error) {
+        lastError = error
+        this.addDetail(`${source.label}安装失败。`)
+      }
+    }
+    throw lastError instanceof Error ? lastError : new Error(String(lastError || '所有内置包镜像均安装失败。'))
   }
 
   private runInstallerProcess(
@@ -490,7 +602,8 @@ export class RuntimeSetup extends EventEmitter {
     this.status = {
       ...this.status,
       ...patch,
-      details: patch.details ? [...patch.details] : [...this.details]
+      details: patch.details ? [...patch.details] : [...this.details],
+      packageSource: { ...this.packageSource }
     }
     this.emit('status', this.getStatus())
   }

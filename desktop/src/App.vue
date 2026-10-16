@@ -11,6 +11,7 @@ import type { LogLine } from './components/ConsoleDock.vue'
 import { wsClient } from './api/ws'
 import type { Envelope } from './api/protocol'
 import { t } from './locales'
+import { DEFAULT_PACKAGE_SOURCE, type PackageSourceSelection } from '../shared/package-source'
 
 const route = useRoute()
 const router = useRouter()
@@ -22,6 +23,7 @@ interface RuntimeSetupView {
   message: string
   error: string
   details: string[]
+  packageSource: PackageSourceSelection
 }
 
 const theme = ref<'light' | 'dark'>('light')
@@ -44,7 +46,8 @@ const runtimeSetup = ref<RuntimeSetupView>({
   step: '开发环境',
   message: '开发环境由当前 Python 配置提供。',
   error: '',
-  details: []
+  details: [],
+  packageSource: { ...DEFAULT_PACKAGE_SOURCE }
 })
 const setupRetrying = ref(false)
 let activeWsUrl = ''
@@ -77,6 +80,8 @@ function applyBackendStatus(s: {
 }
 
 const showAside = computed(() => route.path.startsWith('/workbench') || route.path.startsWith('/models'))
+// 独立摄像头窗口只渲染预览路由，避免带出导航、控制台和初始化遮罩。
+const isCameraPopout = computed(() => route.name === 'camera-popout' || route.path === '/camera-popout')
 
 function applyTheme(next: 'light' | 'dark'): void {
   theme.value = next
@@ -192,12 +197,12 @@ async function onRestart(): Promise<void> {
 }
 
 /** 响应初始化失败提示中的重试操作，并把新状态反馈到界面。 */
-async function retryRuntimeSetup(): Promise<void> {
+async function retryRuntimeSetup(packageSource: PackageSourceSelection): Promise<void> {
   const api = window.yoloStudio
   if (!api?.retryRuntimeSetup || setupRetrying.value) return
   setupRetrying.value = true
   try {
-    applyRuntimeSetupStatus(await api.retryRuntimeSetup())
+    applyRuntimeSetupStatus(await api.retryRuntimeSetup(packageSource))
   } catch (error) {
     pushLog('ERROR', 'runtime', error instanceof Error ? error.message : String(error))
   } finally {
@@ -279,8 +284,9 @@ watch(() => route.path, () => {
 </script>
 
 <template>
+  <router-view v-if="isCameraPopout" />
   <!-- 应用外壳：汇总导航、后端状态、控制台和首次运行提示。 -->
-  <div class="shell">
+  <div v-else class="shell">
     <BootSplash :status="backend.status" :message="backend.message" />
 
     <AppHeader

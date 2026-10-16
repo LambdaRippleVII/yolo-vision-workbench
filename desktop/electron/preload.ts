@@ -1,5 +1,6 @@
 /** 通过受限且有类型的 IPC 接口向渲染进程暴露桌面能力。 */
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
+import type { PackageSourceSelection } from '../shared/package-source'
 
 export interface BackendStatus {
   status: string
@@ -23,6 +24,7 @@ export interface RuntimeSetupStatus {
   message: string
   error: string
   details: string[]
+  packageSource: PackageSourceSelection
 }
 
 // 仅公开界面实际需要的 IPC 方法，避免把 Electron 原始对象暴露给页面。
@@ -31,7 +33,8 @@ const api = {
   getWsUrl: (): Promise<string> => ipcRenderer.invoke('backend:getWsUrl'),
   restartBackend: (): Promise<BackendStatus> => ipcRenderer.invoke('backend:restart'),
   getRuntimeSetupStatus: (): Promise<RuntimeSetupStatus> => ipcRenderer.invoke('runtime:getStatus'),
-  retryRuntimeSetup: (): Promise<RuntimeSetupStatus> => ipcRenderer.invoke('runtime:retry'),
+  retryRuntimeSetup: (source: PackageSourceSelection): Promise<RuntimeSetupStatus> =>
+    ipcRenderer.invoke('runtime:retry', source),
   onRuntimeSetupStatus: (cb: (status: RuntimeSetupStatus) => void): (() => void) => {
     const listener = (_: unknown, status: RuntimeSetupStatus) => cb(status)
     ipcRenderer.on('runtime:status', listener)
@@ -52,7 +55,15 @@ const api = {
     ipcRenderer.on('menu:action', listener)
     return () => ipcRenderer.removeListener('menu:action', listener)
   },
-  openCameraWindow: (): Promise<void> => ipcRenderer.invoke('window:openCamera'),
+  openCameraWindow: (streamId: string): Promise<void> => ipcRenderer.invoke('window:openCamera', streamId),
+  onCameraWindowState: (
+    cb: (state: { open: boolean; streamId: string }) => void
+  ): (() => void) => {
+    const listener = (_event: unknown, state: { open: boolean; streamId: string }) => cb(state)
+    ipcRenderer.on('window:cameraState', listener)
+    return () => ipcRenderer.removeListener('window:cameraState', listener)
+  },
+  closeCameraWindow: (): Promise<void> => ipcRenderer.invoke('window:closeCamera'),
   setAlwaysOnTop: (flag: boolean): Promise<void> => ipcRenderer.invoke('window:setAlwaysOnTop', flag),
   selectImage: (): Promise<string | null> => ipcRenderer.invoke('dialog:selectImage'),
   selectModelFile: (): Promise<string | null> => ipcRenderer.invoke('dialog:selectModelFile'),

@@ -42,8 +42,16 @@ const camFrameCount = ref(0)
 const camDetectCount = ref(0)
 const zoom = ref(1)
 const showLabelCfg = ref(false)
+// 标记摄像头画面是否已经移到独立窗口。
+const popoutOpen = ref(false)
+// 记录独立窗口当前绑定的流，避免旧窗口事件影响新流。
+const popoutStreamId = ref('')
+// 标记独立窗口 IPC 是否仍在创建中。
+const popoutOpening = ref(false)
 const labelSettings = ref<LabelSettings>(defaultLabelSettings())
 const stageRef = ref<HTMLElement | null>(null)
+// 保存窗口状态监听的取消函数，页面离开时释放 IPC 监听。
+let stopPopoutState: (() => void) | undefined
 
 function setErr(e: unknown): void {
   errorMsg.value = formatError(e)
@@ -125,6 +133,12 @@ async function startCamera(): Promise<void> {
 
 async function stopCamera(): Promise<void> {
   if (recording.value) await stopRecord()
+  if (popoutOpen.value || popoutOpening.value || popoutStreamId.value) {
+    await window.yoloStudio?.closeCameraWindow?.()
+    popoutOpen.value = false
+    popoutStreamId.value = ''
+    popoutOpening.value = false
+  }
   if (!camStreamId.value) return
   try {
     await wsClient.request('camera.close', { stream_id: camStreamId.value })
@@ -198,13 +212,50 @@ function toggleFullscreen(): void {
 }
 
 function openPopout(): void {
-  void window.yoloStudio?.openCameraWindow?.()
+  if (!camStreamId.value || popoutOpen.value || popoutOpening.value) return
+  const streamId = camStreamId.value
+  popoutStreamId.value = streamId
+  popoutOpening.value = true
+  const api = window.yoloStudio
+  const request = api?.openCameraWindow?.(streamId)
+  if (!request) {
+    popoutStreamId.value = ''
+    popoutOpening.value = false
+    return
+  }
+  void request
+    .then(() => {
+      popoutOpening.value = false
+      if (camStreamId.value !== streamId || popoutStreamId.value !== streamId) {
+        void api?.closeCameraWindow?.()
+      }
+    })
+    .catch((error) => {
+      popoutOpening.value = false
+      if (popoutStreamId.value === streamId) {
+        popoutOpen.value = false
+        popoutStreamId.value = ''
+        setErr(error)
+      }
+    })
 }
 
 const liveLabel = computed(() => (camLive.value ? t('backend.ready') : t('camera.empty')))
 
 onMounted(() => {
   void loadModels()
+  stopPopoutState = window.yoloStudio?.onCameraWindowState?.((state) => {
+    if (state.open) {
+      if (state.streamId !== camStreamId.value) return
+      popoutStreamId.value = state.streamId
+      popoutOpen.value = true
+      return
+    }
+    if (state.streamId === popoutStreamId.value) {
+      popoutOpen.value = false
+      popoutStreamId.value = ''
+    }
+  })
   wsClient.on('client.open', () => void loadModels())
   wsClient.on('stream.frame', (msg: { data?: Record<string, unknown> }) => {
     const d = msg.data || {}
@@ -220,6 +271,7 @@ onMounted(() => {
   })
 })
 onUnmounted(() => {
+  stopPopoutState?.()
   void stopCamera()
 })
 </script>
@@ -286,14 +338,26 @@ onUnmounted(() => {
           {{ t('camera.fullscreen') }}
         </button>
         <button v-if="!embed" type="button" class="ghost mini" @click="showLabelCfg = true">标签配置</button>
-        <button v-if="!embed" type="button" class="ghost mini" @click="openPopout">
-          {{ t('camera.popout') }}
+        <button
+          v-if="!embed"
+          type="button"
+          class="ghost mini"
+          :disabled="!camLive || popoutOpen || popoutOpening"
+          @click="openPopout"
+        >
+          {{ popoutOpening ? '正在打开独立窗口…' : popoutOpen ? '已在独立窗口显示' : t('camera.popout') }}
         </button>
         <span class="status-pill" :class="{ on: camLive }">{{ liveLabel }}</span>
       </div>
-      <div class="stage-frame" :style="{ transform: `scale(${zoom})` }">
+      <div class="stage-frame" :style="{ transform: popoutOpen ? 'none' : `scale(${zoom})` }">
+        <EmptyState
+          v-if="popoutOpen"
+          icon="↗"
+          title="画面已在独立窗口显示"
+          description="关闭独立窗口后，画面会恢复到这里。"
+        />
         <CanvasStage
-          v-if="imageUrl"
+          v-else-if="imageUrl"
           :image-url="imageUrl"
           :objects="objects"
           :selected-id="selectedId"

@@ -6,6 +6,11 @@ declare module '*.vue' {
   export default component
 }
 
+type RuntimePackageSourceSelection = {
+  id: 'tsinghua' | 'aliyun' | 'ustc' | 'custom'
+  customUrl: string
+}
+
 interface YoloStudioBridge {
   getBackendStatus: () => Promise<{
     status: string
@@ -31,14 +36,16 @@ interface YoloStudioBridge {
     message: string
     error: string
     details: string[]
+    packageSource: RuntimePackageSourceSelection
   }>
-  retryRuntimeSetup?: () => Promise<{
+  retryRuntimeSetup?: (source: RuntimePackageSourceSelection) => Promise<{
     managed: boolean
     phase: 'initializing' | 'ready' | 'failed'
     step: string
     message: string
     error: string
     details: string[]
+    packageSource: RuntimePackageSourceSelection
   }>
   onRuntimeSetupStatus?: (
     cb: (status: {
@@ -48,6 +55,7 @@ interface YoloStudioBridge {
       message: string
       error: string
       details: string[]
+      packageSource: RuntimePackageSourceSelection
     }) => void
   ) => () => void
   onBackendStatus: (
@@ -62,7 +70,9 @@ interface YoloStudioBridge {
   ) => () => void
   onBackendLog: (cb: (e: { level: string; source: string; message: string }) => void) => () => void
   onMenuAction?: (cb: (payload: { action: string }) => void) => () => void
-  openCameraWindow?: () => Promise<void>
+  openCameraWindow?: (streamId: string) => Promise<void>
+  onCameraWindowState?: (cb: (state: { open: boolean; streamId: string }) => void) => () => void
+  closeCameraWindow?: () => Promise<void>
   setAlwaysOnTop?: (flag: boolean) => Promise<void>
   selectImage?: () => Promise<string | null>
   selectModelFile?: () => Promise<string | null>

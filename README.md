@@ -18,7 +18,7 @@ YOLO Vision Workbench 是一款面向中文用户的桌面视觉检测工具：�
 
 ## 安装版使用
 
-安装版自带 CPU 推理运行环境，无需另装 Python。第一次使用内置模型时，在模型列表旁点「下载」；权重下载到本机用户目录，之后可离线使用。下载需要连接 Ultralytics 官方模型仓库，失败时界面会显示原因，也可用「添加模型」导入本地权重。
+安装版自带 Python 运行时，无需另装 Python。首次启动时，软件会用随包 Python 在用户目录安装后端依赖、CPU 版 PyTorch 和 Ultralytics。默认使用清华镜像，失败时自动尝试阿里云和中科大镜像；仍失败时，可在初始化提示中选择其他内置源或填写自定义 PyPI `/simple` 地址，再保存并重试。模型权重不会自动下载；需要时在模型列表旁点「下载」，权重会保存到本机用户目录，之后可离线使用。模型下载失败时界面会显示原因，也可用「添加模型」导入本地权重。
 
 没有官方预训练权重的配置不会显示下载按钮，需要先导入自己的权重文件。
 
@@ -50,7 +50,7 @@ npm run dev
 
 应用启动后会**自动拉起** Python 后端（默认 `127.0.0.1:8765`）。
 
-发行版构建使用 `npm run dist`，会在打包前向内嵌 Python 安装 CPU 版 PyTorch 和 Ultralytics。请将 Windows x64 Python 3.11+ embeddable runtime 放在 `desktop/vendor/python-embed/runtime`；旧版构建目录中的运行时会自动复制到此位置。构建机需要能访问 PyPA、PyPI 与 PyTorch CPU wheel 源。
+发行版构建使用 `npm run dist`，会将 Windows x64 Python 3.11+ embeddable runtime 放入安装包；CPU 版 PyTorch、Ultralytics 和后端依赖会在用户首次启动时安装到用户目录。请将 embeddable runtime 放在 `desktop/vendor/python-embed/runtime`；旧版构建目录中的运行时会自动复制到此位置。构建准备阶段只有在运行时缺少 pip 或 Windows 安装组件时才需要从 PyPA/PyPI 下载修复文件。
 
 ### 3. 基本用法
 

@@ -1,6 +1,11 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
 import BrandMark from './BrandMark.vue'
+import {
+  BUILTIN_PACKAGE_SOURCES,
+  type PackageSourceId,
+  type PackageSourceSelection
+} from '../../shared/package-source'
 
 interface RuntimeSetupView {
   managed: boolean
@@ -9,6 +14,7 @@ interface RuntimeSetupView {
   message: string
   error: string
   details: string[]
+  packageSource: PackageSourceSelection
 }
 
 const props = defineProps<{
@@ -17,17 +23,52 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  retryRuntime: []
+  retryRuntime: [source: PackageSourceSelection]
 }>()
 
+// 绑定初始化弹窗节点，供键盘焦点管理复用。
 const panel = ref<HTMLElement | null>(null)
+// 记住弹窗打开前的焦点元素，初始化完成后恢复键盘位置。
 let focusBeforeSetup: HTMLElement | null = null
+// 保存用户在失败重试时选择的镜像源与自定义地址。
+const selectedPackageSource = ref<PackageSourceSelection>({ ...props.runtime.packageSource })
+// 展示可直接选择的国内 PyPI 镜像和自定义入口。
+const packageSourceOptions: Array<{ id: PackageSourceId; label: string }> = [
+  ...BUILTIN_PACKAGE_SOURCES.map(({ id, label }) => ({ id, label })),
+  { id: 'custom', label: '自定义镜像' }
+]
+// 限定初始化弹窗只在打包版运行环境未就绪时显示。
 const runtimeVisible = computed(
   () => props.runtime.managed && props.runtime.phase !== 'ready'
 )
+// 统一供模板和焦点管理逻辑判断弹窗可见状态。
 const visible = computed(() => runtimeVisible.value)
+// 标记需要展示详细错误和可编辑镜像源的失败状态。
 const isRuntimeFailure = computed(() => runtimeVisible.value && props.runtime.phase === 'failed')
+// 标记初始化进度动画和忙碌状态。
 const isWorking = computed(() => runtimeVisible.value && props.runtime.phase === 'initializing')
+// 重试过程中锁定镜像输入，避免修改与当前任务竞争。
+const canEditPackageSource = computed(() => isRuntimeFailure.value && !props.retrying)
+// 显示当前保存的首选镜像，便于用户确认下一次重试设置。
+const selectedPackageSourceLabel = computed(() => {
+  if (props.runtime.phase !== 'initializing') return ''
+  if (props.runtime.packageSource.id === 'custom') return '自定义镜像'
+  return packageSourceOptions.find((item) => item.id === props.runtime.packageSource.id)?.label || ''
+})
+// 阻止无效自定义地址提交给主进程和 pip。
+const customSourceValid = computed(() => {
+  if (selectedPackageSource.value.id !== 'custom') return true
+  try {
+    const url = new URL(selectedPackageSource.value.customUrl)
+    return (url.protocol === 'https:' || url.protocol === 'http:') && Boolean(url.hostname)
+  } catch {
+    return false
+  }
+})
+
+watch(() => props.runtime.packageSource, (source) => {
+  selectedPackageSource.value = { ...source }
+}, { deep: true })
 
 // 弹层打开时将焦点移入对话框，关闭时把焦点还给此前的控件。
 watch(visible, async (shown, wasShown) => {
@@ -36,7 +77,9 @@ watch(visible, async (shown, wasShown) => {
       focusBeforeSetup = document.activeElement instanceof HTMLElement ? document.activeElement : null
     }
     await nextTick()
-    const firstFocusable = panel.value?.querySelector<HTMLElement>('button:not(:disabled), summary')
+    const firstFocusable = panel.value?.querySelector<HTMLElement>(
+      'button:not(:disabled), select:not(:disabled), input:not(:disabled), summary'
+    )
     ;(firstFocusable ?? panel.value)?.focus()
   } else {
     focusBeforeSetup?.focus()
@@ -47,7 +90,9 @@ watch(visible, async (shown, wasShown) => {
 /** 将 Tab 键焦点限制在初始化对话框内，满足模态窗口的键盘操作习惯。 */
 function trapFocus(event: KeyboardEvent): void {
   if (event.key !== 'Tab' || !panel.value) return
-  const items = [...panel.value.querySelectorAll<HTMLElement>('button:not(:disabled), summary')]
+  const items = [...panel.value.querySelectorAll<HTMLElement>(
+    'button:not(:disabled), select:not(:disabled), input:not(:disabled), summary'
+  )]
   if (!items.length) {
     event.preventDefault()
     panel.value.focus()
@@ -114,6 +159,39 @@ function trapFocus(event: KeyboardEvent): void {
             首次准备会安装服务依赖、CPU 版 PyTorch 和 YOLO 组件。请保持软件开启；模型权重不会自动下载，可在「模型管理」中按需下载或导入。
           </p>
 
+          <section class="setup-source" aria-labelledby="setup-source-title">
+            <div class="setup-source-heading">
+              <strong id="setup-source-title">Python 包镜像源</strong>
+              <span v-if="selectedPackageSourceLabel">首选：{{ selectedPackageSourceLabel }}</span>
+            </div>
+            <select
+              id="setup-package-source"
+              v-model="selectedPackageSource.id"
+              :disabled="!canEditPackageSource"
+              aria-label="选择 Python 包镜像源"
+            >
+              <option v-for="source in packageSourceOptions" :key="source.id" :value="source.id">
+                {{ source.label }}
+              </option>
+            </select>
+            <input
+              v-if="selectedPackageSource.id === 'custom'"
+              v-model="selectedPackageSource.customUrl"
+              type="url"
+              inputmode="url"
+              autocomplete="url"
+              placeholder="https://镜像域名/simple"
+              aria-label="自定义 Python 包镜像地址"
+              :disabled="!canEditPackageSource"
+            />
+            <p v-if="selectedPackageSource.id === 'custom' && !customSourceValid" class="setup-source-error">
+              请填写有效的 http 或 https 镜像索引地址。
+            </p>
+            <p>
+              默认使用清华镜像；安装会按当前首选源尝试，并自动回退到其他内置源。自定义地址需指向 pip simple 索引；PyTorch CPU 包同时查询官方 CPU 源和这些镜像。
+            </p>
+          </section>
+
           <div v-if="runtime.phase === 'failed'" class="setup-error" role="alert">
             <strong>初始化失败</strong>
             <pre>{{ runtime.error || '没有收到详细错误信息。' }}</pre>
@@ -127,10 +205,10 @@ function trapFocus(event: KeyboardEvent): void {
             v-if="runtime.phase === 'failed'"
             type="button"
             class="primary setup-primary"
-            :disabled="retrying"
-            @click="emit('retryRuntime')"
+            :disabled="retrying || !customSourceValid"
+            @click="emit('retryRuntime', { ...selectedPackageSource })"
           >
-            {{ retrying ? '正在重试…' : '重试初始化' }}
+            {{ retrying ? '正在重试…' : '保存镜像源并重试' }}
           </button>
         </template>
 
@@ -254,6 +332,62 @@ function trapFocus(event: KeyboardEvent): void {
   margin: 14px 0 0;
   color: var(--text-secondary);
   font-size: var(--text-sm);
+}
+
+.setup-source {
+  display: grid;
+  gap: 9px;
+  margin-top: 18px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-inset);
+}
+
+.setup-source-heading {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 4px 12px;
+}
+
+.setup-source-heading span,
+.setup-source p {
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+}
+
+.setup-source .setup-source-error {
+  color: var(--danger);
+}
+
+.setup-source select,
+.setup-source input {
+  width: 100%;
+  min-height: 36px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg-panel);
+  color: var(--text-primary);
+  padding: 7px 9px;
+  font: inherit;
+}
+
+.setup-source select:focus-visible,
+.setup-source input:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.setup-source select:disabled,
+.setup-source input:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
+.setup-source p {
+  margin: 0;
+  line-height: 1.5;
 }
 
 .setup-error {
