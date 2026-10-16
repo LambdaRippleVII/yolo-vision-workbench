@@ -23,7 +23,6 @@
 | COCO · YOLO26n | YOLO26n | COCO | `weights/yolo26n.pt` | Ultralytics |
 | COCO · YOLO11n | YOLO11n | COCO | `weights/yolo11n.pt` | Ultralytics |
 | Objects365 · YOLO26n | YOLO26n | Objects365 | `weights/objects365_yolo26n.pt` | Ultralytics |
-| Objects365 · YOLO11n | YOLO11n | Objects365 | `weights/objects365_yolo11n.pt` | Ultralytics |
 | OpenImagesV7 · YOLOv8n | YOLOv8n | OpenImagesV7 | `weights/openimages_yolov8n.pt` | Ultralytics |
 
 详见 `models/examples/*.yaml` 中的 `source` 字段与 `models/repository/catalog.yaml`。

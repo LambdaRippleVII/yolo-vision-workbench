@@ -1,6 +1,6 @@
 /** Electron 主进程入口：准备运行环境、管理本地后端并创建应用窗口。 */
 import { app, BrowserWindow, dialog, ipcMain, Menu, shell, MenuItemConstructorOptions } from 'electron'
-import { appendFileSync, copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'fs'
+import { appendFileSync, copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, unlinkSync, writeFileSync } from 'fs'
 import { pathToFileURL } from 'url'
 import { join, resolve, basename } from 'path'
 import { ProcessSupervisor } from './backend/supervisor'
@@ -58,6 +58,23 @@ function copyMissingFiles(sourceDir: string, targetDir: string): void {
   }
 }
 
+/** 删除已从默认目录移除、且没有用户权重的旧模型配置。 */
+function removeObsoleteBuiltinModels(modelsDir: string): void {
+  const legacyConfig = join(modelsDir, 'examples', 'objects365_yolo11n.yaml')
+  const legacyWeight = join(modelsDir, 'examples', 'weights', 'objects365_yolo11n.pt')
+  if (!existsSync(legacyConfig) || existsSync(legacyWeight)) return
+
+  try {
+    const content = readFileSync(legacyConfig, 'utf8')
+    // 只清理旧版内置配置，避免误删用户自行创建的同名模型。
+    if (content.includes('id: objects365_yolo11n') && content.includes('未提供官方可下载权重')) {
+      unlinkSync(legacyConfig)
+    }
+  } catch {
+    // 清理失败不应阻断应用启动；模型管理页仍可显示并允许用户手动处理。
+  }
+}
+
 function preparePackagedData(): void {
   if (!app.isPackaged) return
 
@@ -67,6 +84,7 @@ function preparePackagedData(): void {
   const logsDir = resolve(process.env.YOLO_STUDIO_LOGS_DIR || join(userDataDir, 'logs'))
 
   copyMissingFiles(join(process.resourcesPath, 'models'), modelsDir)
+  removeObsoleteBuiltinModels(modelsDir)
   copyMissingFiles(join(process.resourcesPath, 'projects'), projectsDir)
   mkdirSync(projectsDir, { recursive: true })
   mkdirSync(logsDir, { recursive: true })

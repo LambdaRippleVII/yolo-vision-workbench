@@ -195,7 +195,6 @@ def _default_filename(model_id: str) -> str:
     mapping = {
         "coco_yolo11n": "yolo11n.pt",
         "coco_yolo26n": "yolo26n.pt",
-        "objects365_yolo11n": "objects365_yolo11n.pt",
         "objects365_yolo26n": "objects365_yolo26n.pt",
         "openimages_yolo8n": "openimages_yolov8n.pt",
     }

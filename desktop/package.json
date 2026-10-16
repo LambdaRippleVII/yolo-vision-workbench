@@ -1,6 +1,6 @@
 {
   "name": "yolo-vision-workbench-desktop",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "private": true,
   "description": "YOLO Vision Workbench desktop shell (Electron + Vue3)",
   "main": "out/main/index.js",
@@ -79,8 +79,23 @@
     },
     "nsis": {
       "oneClick": false,
+      "perMachine": false,
+      "selectPerMachineByDefault": false,
+      "allowElevation": true,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "runAfterFinish": true,
+      "installerLanguages": [
+        "zh_CN"
+      ],
+      "displayLanguageSelector": false,
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "installerSidebar": "build/installerSidebar.bmp",
+      "uninstallerSidebar": "build/installerSidebar.bmp",
+      "include": "build/installer.nsh",
+      "uninstallDisplayName": "YOLO 视觉工作台",
       "shortcutName": "YOLO 视觉工作台"
     }
   }
