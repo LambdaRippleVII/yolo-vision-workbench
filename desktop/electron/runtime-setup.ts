@@ -13,6 +13,8 @@ const PIP_BOOTSTRAP_URL = 'https://bootstrap.pypa.io/get-pip.py'
 const PYTORCH_CPU_INDEX = 'https://download.pytorch.org/whl/cpu'
 // 安装 PyTorch 以外 Python 包时使用的默认包索引。
 const PYPI_INDEX = 'https://pypi.org/simple'
+// pip 在 Windows 上生成命令行入口时需要这些 distlib 启动器资源。
+const DISTLIB_LAUNCHERS = ['t32.exe', 't64.exe', 't64-arm.exe', 'w32.exe', 'w64.exe', 'w64-arm.exe'] as const
 
 export type RuntimeSetupPhase = 'initializing' | 'ready' | 'failed'
 
@@ -120,6 +122,7 @@ export class RuntimeSetup extends EventEmitter {
 
     // 依赖安装顺序保证基础服务先就绪，再安装推理框架并执行导入校验。
     await this.ensurePip()
+    await this.ensureDistlibLaunchers()
 
     this.update({
       phase: 'initializing',
@@ -236,6 +239,7 @@ export class RuntimeSetup extends EventEmitter {
         torchMode?: string
       }
       if (marker.schemaVersion !== RUNTIME_SCHEMA_VERSION || marker.torchMode !== 'cpu') return false
+      if (!this.hasDistlibLaunchers()) return false
       // 标记文件只作快速索引，启动时仍实际探测核心包，避免损坏安装被误判为完成。
       const probe = spawnSync(
         this.pythonPath,
@@ -255,6 +259,12 @@ export class RuntimeSetup extends EventEmitter {
     } catch {
       return false
     }
+  }
+
+  private hasDistlibLaunchers(): boolean {
+    const distlibDir = join(this.installDir, 'Lib', 'site-packages', 'pip', '_vendor', 'distlib')
+    const required = process.arch === 'arm64' ? ['t64-arm.exe', 'w64-arm.exe'] : process.arch === 'ia32' ? ['t32.exe', 'w32.exe'] : ['t64.exe', 'w64.exe']
+    return required.every((name) => existsSync(join(distlibDir, name)))
   }
 
   private async ensurePip(): Promise<void> {
@@ -293,6 +303,65 @@ export class RuntimeSetup extends EventEmitter {
     } finally {
       clearTimeout(timeout)
       if (bootstrapPath) await fs.rm(bootstrapPath, { force: true }).catch(() => undefined)
+    }
+  }
+
+  private async ensureDistlibLaunchers(): Promise<void> {
+    const distlibDir = join(this.installDir, 'Lib', 'site-packages', 'pip', '_vendor', 'distlib')
+    const required = process.arch === 'arm64' ? ['t64-arm.exe', 'w64-arm.exe'] : process.arch === 'ia32' ? ['t32.exe', 'w32.exe'] : ['t64.exe', 'w64.exe']
+    if (this.hasDistlibLaunchers()) return
+
+    this.update({
+      phase: 'initializing',
+      step: '2/5 · 修复安装工具',
+      message: '正在修复 pip 的 Windows 安装组件…'
+    })
+    const repairDir = join(this.options.userDataDir, 'pip-repair')
+    await fs.rm(repairDir, { recursive: true, force: true })
+    await fs.mkdir(repairDir, { recursive: true })
+    try {
+      // 只下载 wheel，不执行安装，因此不会触发当前缺失启动器的问题。
+      await this.runInstallerProcess(
+        this.pythonPath,
+        [
+          '-m',
+          'pip',
+          'download',
+          '--disable-pip-version-check',
+          '--no-input',
+          '--no-cache-dir',
+          '--no-deps',
+          '--only-binary=:all:',
+          '--dest',
+          repairDir,
+          'pip'
+        ],
+        '2/5 · 修复安装工具',
+        '正在下载 pip 修复包…'
+      )
+      const wheel = readdirSync(repairDir).find((name) => /^pip-.*\.whl$/i.test(name))
+      if (!wheel) throw new Error('没有找到已下载的 pip wheel。')
+      const extractScript = [
+        'import pathlib, sys, zipfile',
+        'wheel = pathlib.Path(sys.argv[1])',
+        'target = pathlib.Path(sys.argv[2])',
+        'target.mkdir(parents=True, exist_ok=True)',
+        'with zipfile.ZipFile(wheel) as archive:',
+        '    names = set(archive.namelist())',
+        `    for name in ${JSON.stringify(DISTLIB_LAUNCHERS)}:`,
+        "        source = 'pip/_vendor/distlib/' + name",
+        '        if source in names: (target / name).write_bytes(archive.read(source))'
+      ].join('\n')
+      await this.runInstallerProcess(
+        this.pythonPath,
+        ['-c', extractScript, join(repairDir, wheel), distlibDir],
+        '2/5 · 修复安装工具',
+        '正在写入 pip Windows 启动器…'
+      )
+      const missing = required.filter((name) => !existsSync(join(distlibDir, name)))
+      if (missing.length) throw new Error(`pip wheel 中仍缺少启动器：${missing.join(', ')}`)
+    } finally {
+      await fs.rm(repairDir, { recursive: true, force: true }).catch(() => undefined)
     }
   }
 

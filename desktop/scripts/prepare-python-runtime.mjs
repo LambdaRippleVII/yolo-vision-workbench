@@ -10,6 +10,8 @@ const backendDir = resolve(projectDir, 'backend')
 const runtimeDir = resolve(desktopDir, 'vendor', 'python-embed', 'runtime')
 const legacyRuntimeDir = resolve(desktopDir, 'release', 'python-embed', 'runtime')
 const pythonPath = resolve(runtimeDir, 'python.exe')
+// pip 在 Windows 上生成命令行入口时需要这些 distlib 启动器资源。
+const DISTLIB_LAUNCHERS = ['t32.exe', 't64.exe', 't64-arm.exe', 'w32.exe', 'w64.exe', 'w64-arm.exe']
 
 if (!existsSync(runtimeDir) && existsSync(legacyRuntimeDir)) {
   mkdirSync(dirname(runtimeDir), { recursive: true })
@@ -76,7 +78,52 @@ async function ensurePip() {
   }
 }
 
+async function ensureDistlibLaunchers() {
+  const distlibDir = resolve(runtimeDir, 'Lib', 'site-packages', 'pip', '_vendor', 'distlib')
+  const required = process.arch === 'arm64' ? ['t64-arm.exe', 'w64-arm.exe'] : process.arch === 'ia32' ? ['t32.exe', 'w32.exe'] : ['t64.exe', 'w64.exe']
+  if (required.every((name) => existsSync(resolve(distlibDir, name)))) return
+
+  console.log('随包 Python 缺少 pip 的 Windows 启动器，正在从 pip wheel 修复…')
+  const repairDir = resolve(tmpdir(), `yolo-vision-workbench-pip-repair-${process.pid}`)
+  mkdirSync(repairDir, { recursive: true })
+  try {
+    // 只下载 wheel，不执行安装，因此不会触发当前缺失启动器的问题。
+    runPython([
+      '-m',
+      'pip',
+      'download',
+      '--disable-pip-version-check',
+      '--no-input',
+      '--no-cache-dir',
+      '--no-deps',
+      '--only-binary=:all:',
+      '--dest',
+      repairDir,
+      'pip'
+    ])
+    const wheel = readdirSync(repairDir).find((name) => /^pip-.*\.whl$/i.test(name))
+    if (!wheel) throw new Error('没有找到已下载的 pip wheel。')
+    const extractScript = [
+      'import pathlib, sys, zipfile',
+      'wheel = pathlib.Path(sys.argv[1])',
+      'target = pathlib.Path(sys.argv[2])',
+      'target.mkdir(parents=True, exist_ok=True)',
+      'with zipfile.ZipFile(wheel) as archive:',
+      '    names = set(archive.namelist())',
+      `    for name in ${JSON.stringify(DISTLIB_LAUNCHERS)}:`,
+      "        source = 'pip/_vendor/distlib/' + name",
+      '        if source in names: (target / name).write_bytes(archive.read(source))'
+    ].join('\n')
+    runPython(['-c', extractScript, resolve(repairDir, wheel), distlibDir])
+    const missing = required.filter((name) => !existsSync(resolve(distlibDir, name)))
+    if (missing.length) throw new Error(`pip wheel 中仍缺少启动器：${missing.join(', ')}`)
+  } finally {
+    rmSync(repairDir, { recursive: true, force: true })
+  }
+}
+
 enableEmbeddedSitePackages()
 await ensurePip()
+await ensureDistlibLaunchers()
 
 console.log('随包 Python 已准备好；后端依赖和 YOLO CPU 推理组件将在软件首次启动时安装到用户目录。')
