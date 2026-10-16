@@ -1,5 +1,5 @@
 <script setup lang="ts">
-/** Simple confirmation modal for export-with-edits. */
+/** 为包含未保存编辑的导出等操作提供明确的二次确认。 */
 defineProps<{
   visible: boolean
   title: string
@@ -10,6 +10,7 @@ const emit = defineEmits<{ confirm: []; cancel: [] }>()
 </script>
 
 <template>
+  <!-- 通用确认层，允许调用方自定义标题、说明和按钮文案。 -->
   <div v-if="visible" class="mask" @click.self="emit('cancel')">
     <div class="dialog" role="dialog">
       <h3 class="title">{{ title }}</h3>

@@ -1,4 +1,4 @@
-"""Folder listing WebSocket handler for album UI."""
+"""处理本地媒体目录与图像清单查询请求。"""
 
 from __future__ import annotations
 
@@ -11,6 +11,12 @@ from app.websocket.server import ConnectionContext, WebSocketHub
 
 
 def register_media_handlers(hub: WebSocketHub) -> None:
+    """注册本地媒体目录扫描消息处理器。
+
+    Args:
+        hub: 管理 WebSocket 连接及处理器的服务实例。
+    """
+
     async def on_list_folder(msg: dict[str, Any], ctx: ConnectionContext) -> dict[str, Any]:
         data = msg.get("data") or {}
         folder = data.get("folder_path")
@@ -21,7 +27,7 @@ def register_media_handlers(hub: WebSocketHub) -> None:
         except Exception as exc:  # noqa: BLE001
             return make_error("media.listFolder", "INTERNAL", str(exc), id_=msg.get("id"))
 
-        # attach thumbnails so album can render immediately
+        # 附带缩略图，让前端相册可以立即绘制列表。
         thumbs: list[dict[str, Any]] = []
         want_thumb = bool(data.get("with_thumbs", True))
         for it in items:

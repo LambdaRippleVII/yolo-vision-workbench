@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { t } from '../locales'
+import BrandMark from './BrandMark.vue'
+import Icon from './Icon.vue'
 
 export interface BackendStatusInfo {
   status: string
@@ -60,8 +62,10 @@ const wsLabel = computed(() => {
 </script>
 
 <template>
+  <!-- 顶部栏：展示项目上下文、后端连接状态和常用全局操作。 -->
   <header class="shell-header">
     <div class="brand">
+      <BrandMark :size="24" />
       <div class="brand-title">{{ t('app.name') }}</div>
       <div class="brand-tag">{{ t('app.tagline') }}</div>
     </div>
@@ -86,7 +90,7 @@ const wsLabel = computed(() => {
         <span class="status-dot" />
         {{ t('ws.label') }}：{{ wsLabel }}
       </span>
-      <!-- latency folded into title tooltip only; never adds a new chip -->
+      <!-- 延迟并入右侧等宽数字，不额外占一枚胶囊 -->
       <span class="latency-inline num" :title="pingMs !== null ? `心跳 ${pingMs}ms` : ''">
         {{ pingMs !== null ? `${pingMs} ms` : '' }}
       </span>
@@ -95,13 +99,15 @@ const wsLabel = computed(() => {
     <button
       class="icon-btn"
       :title="t('top.switchTheme')"
+      :aria-label="t('top.switchTheme')"
       type="button"
       @click="emit('toggleTheme')"
     >
-      {{ theme === 'dark' ? '☾' : '☀' }}
+      <Icon :name="theme === 'dark' ? 'sun' : 'moon'" :size="16" />
     </button>
 
     <button class="ghost" type="button" @click="emit('restart')">
+      <Icon name="restart" :size="14" style="display: inline-block; vertical-align: -2px; margin-right: 5px" />
       {{ t('backend.restart') }}
     </button>
   </header>

@@ -1,7 +1,4 @@
-/**
- * ProcessSupervisor: spawn / health-check / restart / stop the Python backend.
- * Port strategy: reuse existing YOLO backend → else free port scan → else friendly error.
- */
+/** 协调 Python 后端的启动、端口探测、健康检查、复用和退出。 */
 import { spawn, ChildProcess, execFile } from 'child_process'
 import { EventEmitter } from 'events'
 import { existsSync } from 'fs'
@@ -19,20 +16,20 @@ export type BackendStatus =
   | 'reused'
 
 export interface SupervisorOptions {
-  /** Absolute path to repo root (contains backend/). */
+  /** 仓库根目录绝对路径，目录中包含 backend。 */
   rootDir: string
-  /** Expected backend version; mismatched existing services are not reused. */
+  /** 期望的后端版本；版本不匹配的既有服务不会被复用。 */
   version?: string
   host: string
   port: number
-  /** Optional explicit python executable. */
+  /** 可选的显式 Python 可执行文件路径。 */
   pythonPath?: string
   healthTimeoutMs?: number
   healthIntervalMs?: number
   maxRestarts?: number
-  /** Dev: attach to an already-running backend instead of spawning. */
+  /** 开发模式下连接已有后端，而不是再创建一个进程。 */
   attachMode?: boolean
-  /** Try next ports when preferred is taken. */
+  /** 首选端口被占用时是否继续尝试后续端口。 */
   autoPort?: boolean
 }
 
@@ -45,6 +42,7 @@ export interface SupervisorStatus {
   reusedPid?: number
 }
 
+/** 管理后端进程生命周期，并通过事件向主进程报告状态和日志。 */
 export class ProcessSupervisor extends EventEmitter {
   private opts: Required<Omit<SupervisorOptions, 'pythonPath' | 'attachMode' | 'version'>> & {
     pythonPath?: string
@@ -97,12 +95,12 @@ export class ProcessSupervisor extends EventEmitter {
     this.emit('status', this.getStatus())
   }
 
-  /** Locate backend package dir (dev repo or packaged extraResources). */
+  /** 在开发目录和安装包资源目录中定位后端代码。 */
   private resolveBackendDir(): string {
     const candidates = [
       join(this.opts.rootDir, 'backend'),
       join(this.opts.rootDir, 'resources', 'backend'),
-      // packaged: <install>/resources/backend
+      // 安装包运行时的资源目录。
       join(process.resourcesPath || '', 'backend'),
       join(this.opts.rootDir, '..', 'backend')
     ]
@@ -112,17 +110,17 @@ export class ProcessSupervisor extends EventEmitter {
     return join(this.opts.rootDir, 'backend')
   }
 
-  /** Find a usable Python interpreter. */
+  /** 按显式配置、随包运行时、项目虚拟环境和系统解释器的优先级选择 Python。 */
   private resolvePython(): string {
-    // 1) explicit
+    // 1) 显式指定的解释器。
     if (this.opts.pythonPath && existsSync(this.opts.pythonPath)) {
       return this.opts.pythonPath
     }
-    // 2) env override
+    // 2) 环境变量覆盖项。
     const envPy = process.env.YOLO_STUDIO_PYTHON
     if (envPy && existsSync(envPy)) return envPy
 
-    // 3) bundled embeddable runtime (installer / portable)
+    // 3) 安装包或便携版随附的嵌入式运行时。
     const bundled = [
       join(process.resourcesPath || '', 'python-embed', 'runtime', 'python.exe'),
       join(this.opts.rootDir, 'python-embed', 'runtime', 'python.exe'),
@@ -132,7 +130,7 @@ export class ProcessSupervisor extends EventEmitter {
       if (p && existsSync(p)) return p
     }
 
-    // 4) project venv
+    // 4) 项目虚拟环境。
     const backendDir = this.resolveBackendDir()
     const venvCandidates =
       platform() === 'win32'
@@ -145,17 +143,14 @@ export class ProcessSupervisor extends EventEmitter {
       if (existsSync(p)) return p
     }
 
-    // 5) system interpreters
+    // 5) 系统级 Python 解释器。
     if (platform() === 'win32') {
       return 'py'
     }
     return 'python3'
   }
 
-  /** Extra args for `py` launcher (needs -3). */
-  /**
-   * Launch via backend/run_backend.py so embeddable Python (._pth) finds `app`.
-   */
+  /** 生成后端启动参数，并兼容 Windows 的 py 启动器和嵌入式 Python。 */
   private pythonArgs(backendDir: string): string[] {
     const py = this.resolvePython()
     const script = join(backendDir, 'run_backend.py')
@@ -174,7 +169,7 @@ export class ProcessSupervisor extends EventEmitter {
     return this.wsUrl
   }
 
-  /** Prefer: existing backend → free port on preferred → next free port. */
+  /** 优先复用兼容服务，其次尝试首选端口，最后按需查找空闲端口。 */
   private async resolvePort(): Promise<{ port: number; reuse: boolean; pid?: number; note: string }> {
     const host = this.opts.host
     const preferred = this.opts.port
@@ -199,12 +194,12 @@ export class ProcessSupervisor extends EventEmitter {
       }
     }
 
-    // Preferred free?
+    // 先保留用户配置的端口；只有占用时才执行后续候选端口扫描。
     try {
       const free = await findFreePort(preferred, host, 1)
       return { port: free, reuse: false, note: `使用端口 ${free}` }
     } catch {
-      /* fall through */
+      /* 首选端口不可用时继续扫描其他端口。 */
     }
 
     if (!this.opts.autoPort) {
@@ -237,10 +232,11 @@ export class ProcessSupervisor extends EventEmitter {
     this.opts.port = resolved.port
     this.emit('log', { level: 'INFO', source: 'supervisor', message: resolved.note })
 
+    // 命中兼容的既有服务时只等待健康状态，不再启动第二个 Python 进程。
     if (resolved.reuse) {
       this.reusedPid = resolved.pid
       this.setStatus('reused', resolved.note)
-      // still mark ready
+      // 复用服务仍需等待健康检查通过。
       await this.waitHealthy()
       return
     }
@@ -254,7 +250,7 @@ export class ProcessSupervisor extends EventEmitter {
     await this.waitHealthy()
   }
 
-  /** Free port if occupied by non-healthy process is left to user; we only auto-shift. */
+  /** 非健康进程占用端口时保留现场，并由自动端口策略改用其他端口。 */
 
   private async spawnBackend(): Promise<void> {
     if (this.child) return
@@ -412,7 +408,7 @@ export class ProcessSupervisor extends EventEmitter {
 
       if (platform() === 'win32') {
         execFile('taskkill', ['/pid', String(child.pid), '/T', '/F'], () => {
-          /* exit handler will resolve */
+    /* 进程退出事件会完成停止 Promise。 */
         })
       } else {
         child.kill('SIGTERM')

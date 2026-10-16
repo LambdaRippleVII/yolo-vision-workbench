@@ -1,4 +1,4 @@
-"""TaskManager: create / run / cancel image & folder tasks."""
+"""创建、调度、取消并汇报图像、文件夹、视频和导出任务。"""
 
 from __future__ import annotations
 
@@ -14,11 +14,20 @@ from app.inference.session import InferenceSession
 from app.task.base import Task, TaskStatus, TaskType
 from app.utils.image_io import open_video_capture, video_open_error_message
 
+# 统一描述任务进度通知回调的函数签名。
 ProgressCB = Callable[[dict[str, Any]], None]
 
 
 class TaskManager:
+    """协调任务创建、推理运行、进度通知和取消处理。"""
+
     def __init__(self, model_manager: Any) -> None:
+        """初始化任务表、线程池和推理会话。
+
+        Args:
+            model_manager: 负责查询和加载模型的管理器。
+        """
+
         self._model_manager = model_manager
         self._tasks: dict[str, Task] = {}
         self._lock = threading.RLock()
@@ -26,9 +35,23 @@ class TaskManager:
         self._threads: dict[str, threading.Thread] = {}
 
     def on_event(self, cb: ProgressCB) -> None:
+        """注册任务进度和完成事件的回调函数。
+
+        Args:
+            cb: 用于接收进度或结果的回调函数。
+        """
+
         self._listeners.append(cb)
 
     def _emit(self, event: str, task: Task, **extra: Any) -> None:
+        """将任务事件规范化后分发给注册的回调。
+
+        Args:
+            event: 任务生命周期事件名称。
+            task: 需要广播生命周期事件的任务对象。
+            **extra: 要附加到事件负载中的进度或错误字段。
+        """
+
         payload = {"event": event, **task.to_dict(), **extra}
         try:
             dao.upsert_task(task.to_dict())
@@ -41,10 +64,25 @@ class TaskManager:
                 logger.warning("task listener error: {}", exc)
 
     def get(self, task_id: str) -> Task | None:
+        """按任务标识读取内存中的任务对象。
+
+        Args:
+            task_id: 任务的唯一标识。
+
+        Returns:
+            找到的任务对象；不存在时返回 None。
+        """
+
         with self._lock:
             return self._tasks.get(task_id)
 
     def list_tasks(self) -> list[dict[str, Any]]:
+        """按创建时间倒序返回当前进程中的任务快照。
+
+        Returns:
+            可序列化的任务字典列表。
+        """
+
         with self._lock:
             return [t.to_dict() for t in sorted(self._tasks.values(), key=lambda x: x.created_at, reverse=True)]
 
@@ -55,6 +93,17 @@ class TaskManager:
         *,
         overrides: dict[str, Any] | None = None,
     ) -> Task:
+        """构造单张图片推理任务并保存其输入参数。
+
+        Args:
+            media_path: 输入媒体文件路径。
+            model_ids: 本次操作涉及的模型标识列表。
+            overrides: 单图推理的置信度、类别筛选和尺寸覆盖项。
+
+        Returns:
+            已登记的单图推理任务。
+        """
+
         task = Task(
             type=TaskType.IMAGE,
             params={"media_path": media_path, "overrides": overrides or {}},
@@ -72,6 +121,18 @@ class TaskManager:
         overrides: dict[str, Any] | None = None,
         file_paths: list[str] | None = None,
     ) -> Task:
+        """构造目录图片推理任务并记录待处理文件清单。
+
+        Args:
+            folder_path: 待扫描或处理的文件夹路径。
+            model_ids: 本次操作涉及的模型标识列表。
+            overrides: 批量推理的置信度、类别筛选和尺寸覆盖项。
+            file_paths: 要处理的图片文件路径列表。
+
+        Returns:
+            已登记的目录批量推理任务。
+        """
+
         task = Task(
             type=TaskType.FOLDER,
             params={
@@ -86,6 +147,15 @@ class TaskManager:
         return task
 
     def cancel(self, task_id: str) -> Task:
+        """请求取消指定任务并更新其生命周期状态。
+
+        Args:
+            task_id: 任务的唯一标识。
+
+        Returns:
+            已写入取消请求后的任务对象。
+        """
+
         with self._lock:
             task = self._tasks[task_id]
             task.request_cancel()
@@ -96,6 +166,15 @@ class TaskManager:
         return task
 
     def _prepare_runtimes(self, task: Task) -> dict[str, Any]:
+        """根据任务模型列表载入运行时并准备推理会话。
+
+        Args:
+            task: 含模型标识和推理参数的待运行任务。
+
+        Returns:
+            按模型标识索引的已加载运行时字典。
+        """
+
         runtimes: dict[str, Any] = {}
         for mid in task.model_ids:
             if mid not in self._model_manager._loaded:
@@ -104,7 +183,17 @@ class TaskManager:
         return runtimes
 
     def run_image_task(self, task: Task) -> dict[str, Any]:
-        """Run inline and return detect.result payload."""
+        """执行单图推理并保存帧结果和任务状态。
+
+        Args:
+            task: 要执行的单图推理任务。
+
+        Returns:
+            包含任务快照和单帧检测结果的字典。
+
+        Raises:
+            FileNotFoundError: 输入图片不存在或无法读取时抛出。
+        """
         self._emit("created", task)
         task.transition(TaskStatus.RUNNING)
         self._emit("progress", task)
@@ -172,6 +261,19 @@ class TaskManager:
         box_persistence: int = 5,
         overrides: dict[str, Any] | None = None,
     ) -> Task:
+        """创建包含视频采样参数的推理任务。
+
+        Args:
+            media_path: 输入媒体文件路径。
+            model_ids: 本次操作涉及的模型标识列表。
+            skip_frame: 两次检测之间跳过的帧数。
+            box_persistence: 检测框在后续帧中继续显示的帧数。
+            overrides: 视频任务的采样或推理覆盖项。
+
+        Returns:
+            已登记的视频推理任务。
+        """
+
         skip_frame = max(1, int(skip_frame))
         box_persistence = max(1, min(int(box_persistence), skip_frame))
         task = Task(
@@ -189,7 +291,11 @@ class TaskManager:
         return task
 
     def run_video_task_async(self, task: Task) -> None:
-        """Scan video: detect every skip_frame frames; reuse boxes within box_persistence."""
+        """在线程池中启动视频推理并转发进度。
+
+        Args:
+            task: 要在线程中执行的视频推理任务。
+        """
 
         def worker() -> None:
             self._emit("created", task)
@@ -346,6 +452,20 @@ class TaskManager:
         fps: float | None = None,
         hidden_classes: list[str] | None = None,
     ) -> Task:
+        """创建基于已有任务结果的视频导出任务。
+
+        Args:
+            source_task_id: 提供帧结果的来源视频任务标识。
+            source_video: 原始视频文件路径。
+            output_path: 导出文件的目标路径。
+            label_template: 用于拼接对象编号、类别和置信度的标签模板。
+            fps: 输出视频的帧率。
+            hidden_classes: 导出时需要隐藏的类别名称列表。
+
+        Returns:
+            已登记的视频导出任务。
+        """
+
         task = Task(
             type=TaskType.EXPORT,
             params={
@@ -363,6 +483,12 @@ class TaskManager:
         return task
 
     def run_export_task_async(self, task: Task) -> None:
+        """在线程池中执行视频导出并报告完成或失败。
+
+        Args:
+            task: 要在线程中执行的视频导出任务。
+        """
+
         def worker() -> None:
             self._emit("created", task)
             try:
@@ -413,6 +539,12 @@ class TaskManager:
         th.start()
 
     def run_folder_task_async(self, task: Task) -> None:
+        """逐项执行文件夹图像检测并汇报每张图片的进度。
+
+        Args:
+            task: 要在线程中执行的目录推理任务。
+        """
+
         def worker() -> None:
             self._emit("created", task)
             try:
@@ -441,7 +573,7 @@ class TaskManager:
                         task.transition(TaskStatus.CANCELLED)
                         self._emit("done", task)
                         return
-                    # notify UI: currently processing
+            # 通知界面当前正在处理的帧和进度。
                     task.progress_detail = {
                         "done": i,
                         "total": total,

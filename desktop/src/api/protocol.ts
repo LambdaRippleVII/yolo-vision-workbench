@@ -1,4 +1,4 @@
-/** Shared protocol types (aligned with backend/app/websocket/protocol.py). */
+/** 定义与后端 WebSocket 协议对应的前端消息和状态类型。 */
 
 export interface ErrorPayload {
   code: string

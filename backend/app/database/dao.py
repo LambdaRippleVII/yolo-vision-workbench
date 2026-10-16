@@ -1,4 +1,4 @@
-"""Task / result persistence DAO."""
+"""提供任务、帧、对象和操作记录的数据读写函数。"""
 
 from __future__ import annotations
 
@@ -10,10 +10,22 @@ from app.database.connection import get_conn
 
 
 def _now() -> str:
+    """返回 ISO 8601 格式的当前 UTC 时间。
+
+    Returns:
+        当前 UTC 时间的 ISO 8601 字符串。
+    """
+
     return datetime.now(timezone.utc).isoformat()
 
 
 def upsert_task(task: dict[str, Any]) -> None:
+    """插入任务记录；任务已存在时更新其状态、进度和结果字段。
+
+    Args:
+        task: 含任务标识、类型、状态、参数和时间戳的任务数据。
+    """
+
     conn = get_conn()
     conn.execute(
         """
@@ -55,6 +67,15 @@ def upsert_task(task: dict[str, Any]) -> None:
 
 
 def list_tasks(limit: int = 100) -> list[dict[str, Any]]:
+    """按创建时间倒序读取任务，并解码 JSON 参数和进度详情。
+
+    Args:
+        limit: 本次查询或保存允许处理的最大条目数。
+
+    Returns:
+        最新的任务记录列表，数量不超过 limit。
+    """
+
     conn = get_conn()
     rows = conn.execute(
         "SELECT * FROM tasks ORDER BY created_at DESC LIMIT ?",
@@ -75,6 +96,14 @@ def save_frame_result(
     *,
     media_path: str | None = None,
 ) -> None:
+    """将帧结果相关数据。
+
+    Args:
+        task_id: 任务的唯一标识。
+        frame: 当前帧或帧结果数据。
+        media_path: 输入媒体文件路径。
+    """
+
     conn = get_conn()
     frame_id = int(frame.get("frame_id", 0))
     meta = frame.get("meta") or {}
@@ -152,6 +181,21 @@ def append_op(
     payload: dict[str, Any] | None = None,
     actor: str = "user",
 ) -> dict[str, Any]:
+    """追加一条用户或组件发起的检测结果编辑操作。
+
+    Args:
+        task_id: 任务的唯一标识。
+        action: 需要记录或执行的对象编辑操作。
+        frame_id: 视频帧的零基索引。
+        target_type: 操作所针对的数据类型。
+        target_id: 操作所针对的目标标识。
+        payload: 待保存或发送的数据负载。
+        actor: 发起该操作的用户或组件标识。
+
+    Returns:
+        包含数据库操作编号、目标、负载和创建时间的操作记录。
+    """
+
     conn = get_conn()
     now = _now()
     cur = conn.execute(
@@ -185,6 +229,16 @@ def append_op(
 
 
 def list_ops(task_id: str, *, limit: int = 1000) -> list[dict[str, Any]]:
+    """按操作编号升序读取任务编辑历史并解码 JSON 负载。
+
+    Args:
+        task_id: 任务的唯一标识。
+        limit: 本次查询或保存允许处理的最大条目数。
+
+    Returns:
+        指定任务的编辑操作列表，数量不超过 limit。
+    """
+
     conn = get_conn()
     rows = conn.execute(
         "SELECT * FROM ops WHERE task_id=? ORDER BY op_id ASC LIMIT ?",
@@ -205,6 +259,19 @@ def set_object_visible(
     model_id: str,
     visible: bool,
 ) -> int:
+    """更新指定检测对象的可见状态。
+
+    Args:
+        task_id: 任务的唯一标识。
+        frame_id: 视频帧的零基索引。
+        object_id: 当前帧内检测对象的整数编号。
+        model_id: 目标模型的唯一标识。
+        visible: True 表示显示该对象，False 表示隐藏该对象。
+
+    Returns:
+        本次更新影响的数据库记录数。
+    """
+
     conn = get_conn()
     cur = conn.execute(
         """
@@ -224,6 +291,19 @@ def set_object_style(
     model_id: str,
     style: dict[str, Any],
 ) -> int:
+    """更新对象样式相关数据。
+
+    Args:
+        task_id: 任务的唯一标识。
+        frame_id: 视频帧的零基索引。
+        object_id: 当前帧内检测对象的整数编号。
+        model_id: 目标模型的唯一标识。
+        style: 检测框和标签的渲染样式。
+
+    Returns:
+        本次更新影响的数据库记录数。
+    """
+
     conn = get_conn()
     cur = conn.execute(
         """

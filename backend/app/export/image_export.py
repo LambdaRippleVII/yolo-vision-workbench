@@ -1,4 +1,4 @@
-"""Save annotated image / batch frames from results."""
+"""保存带标注的图片和视频选定帧。"""
 
 from __future__ import annotations
 
@@ -27,7 +27,21 @@ def save_annotated_image(
     label_template: str = "{id}:{class}",
     include_source: bool = True,
 ) -> dict[str, Any]:
-    """Draw objects onto image and save. Also write sidecar JSON."""
+    """读取原图、绘制检测标注，并保存图像和对应 JSON 元数据。
+
+    Args:
+        source_image: 原始图像文件路径。
+        output_path: 导出文件的目标路径。
+        objects: 检测对象列表。
+        label_template: 用于拼接对象编号、类别和置信度的标签模板。
+        include_source: 是否在导出结果中保留原始媒体信息。
+
+    Returns:
+        包含图像路径、JSON 路径和导出对象数量的结果字典。
+
+    Raises:
+        FileNotFoundError: 原图无法读取时抛出。
+    """
     source_image = Path(source_image)
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -71,7 +85,22 @@ def save_frame_images(
     label_template: str = "{id}:{class}",
     use_db_visible: bool = True,
 ) -> dict[str, Any]:
-    """Export selected video frames as annotated stills."""
+    """读取视频指定帧，绘制数据库中的检测结果并导出 JPEG 图片。
+
+    Args:
+        task_id: 任务的唯一标识。
+        video_path: 视频文件路径。
+        output_dir: 导出文件的目标目录。
+        frame_ids: 需要导出的帧编号列表。
+        label_template: 用于拼接对象编号、类别和置信度的标签模板。
+        use_db_visible: 是否使用数据库保存的对象可见状态。
+
+    Returns:
+        包含成功保存的图片路径列表和数量的结果字典。
+
+    Raises:
+        FileNotFoundError: 视频无法打开时抛出。
+    """
     video_path = Path(video_path)
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)

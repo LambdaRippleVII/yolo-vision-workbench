@@ -37,6 +37,7 @@ const skipFrame = ref(5)
 const boxPersistence = ref(5)
 const errorMsg = ref('')
 const infoMsg = ref('')
+const downloadingModelId = ref('')
 const camFrameCount = ref(0)
 const camDetectCount = ref(0)
 const zoom = ref(1)
@@ -55,6 +56,36 @@ async function loadModels(): Promise<void> {
   } catch (e) {
     const msg = formatError(e)
     if (!msg.includes('通信未就绪')) errorMsg.value = msg
+  }
+}
+
+async function downloadModel(modelId: string): Promise<void> {
+  if (downloadingModelId.value) return
+  const model = models.value.find((item) => item.model_id === modelId)
+  if (!model) return
+
+  downloadingModelId.value = modelId
+  errorMsg.value = ''
+  infoMsg.value = `正在下载 ${model.name} 权重…`
+  try {
+    const resp = await wsClient.request('model.downloadBuiltin', { model_ids: [modelId] }, 10 * 60 * 1000)
+    const results = (resp.data as {
+      results?: Array<{ model_id: string; ok: boolean; error?: string }>
+    }).results || []
+    const result = results.find((item) => item.model_id === modelId)
+    await loadModels()
+    if (!result?.ok) {
+      errorMsg.value = `模型权重下载失败：${result?.error || '后端没有返回下载结果'}`
+      infoMsg.value = ''
+      return
+    }
+    infoMsg.value = `${model.name} 权重已下载，可以开始推理。`
+    window.dispatchEvent(new Event('yolo-models-changed'))
+  } catch (e) {
+    setErr(e)
+    infoMsg.value = ''
+  } finally {
+    downloadingModelId.value = ''
   }
 }
 
@@ -194,8 +225,9 @@ onUnmounted(() => {
 </script>
 
 <template>
+  <!-- 摄像头工作区：连接 USB/RTSP 视频源、选择模型并查看实时检测。 -->
   <div class="cam-shell" :class="{ embed }">
-    <!-- left: source + models -->
+    <!-- 左侧：视频源和模型 -->
     <aside v-if="!embed" class="cam-side left">
       <section class="panel">
         <div class="panel-head"><h3>{{ t('camera.usb') }} / {{ t('camera.rtsp') }}</h3></div>
@@ -230,8 +262,10 @@ onUnmounted(() => {
           <ModelPicker
             v-model:selected="selectedModels"
             :models="models"
+            :downloading-model-id="downloadingModelId"
             compact
             @update:selected="() => { if (camLive) void syncModelsToStream() }"
+            @download="downloadModel"
           />
           <button type="button" class="ghost mini" :disabled="!camLive" @click="syncModelsToStream">
             应用到摄像头
@@ -240,7 +274,7 @@ onUnmounted(() => {
       </section>
     </aside>
 
-    <!-- center: monitor -->
+    <!-- 中间：实时监视画面 -->
     <main ref="stageRef" class="cam-stage">
       <div class="stage-toolbar">
         <button type="button" class="ghost mini" @click="setZoom(zoom - 0.2)">−</button>
@@ -270,7 +304,7 @@ onUnmounted(() => {
       </div>
     </main>
 
-    <!-- right: params + record -->
+    <!-- 右侧：参数和录制控制 -->
     <aside v-if="!embed" class="cam-side right">
       <section class="panel">
         <div class="panel-head"><h3>{{ t('workbench.params') }}</h3></div>

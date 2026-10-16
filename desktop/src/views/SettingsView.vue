@@ -8,6 +8,7 @@ const themeOptions = [
 </script>
 
 <template>
+  <!-- 系统设置页面，集中呈现应用级偏好和运行状态说明。 -->
   <div class="page">
     <div class="page-header">
       <h1 class="page-title">{{ t('settings.title') }}</h1>

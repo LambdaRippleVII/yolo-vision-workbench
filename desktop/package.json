@@ -1,6 +1,6 @@
 {
   "name": "yolo-vision-workbench-desktop",
-  "version": "0.2.5",
+  "version": "0.3.0",
   "private": true,
   "description": "YOLO Vision Workbench desktop shell (Electron + Vue3)",
   "main": "out/main/index.js",
@@ -64,6 +64,10 @@
         "filter": [
           "**/*"
         ]
+      },
+      {
+        "from": "build/icon.ico",
+        "to": "app-icon.ico"
       }
     ],
     "win": {

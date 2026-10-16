@@ -1,4 +1,4 @@
-"""Smoke export.video after video detection."""
+"""用于手工检查 export 相关流程的辅助脚本。"""
 
 from __future__ import annotations
 
@@ -10,12 +10,17 @@ import cv2
 import numpy as np
 import websockets
 
+# 后端仓库目录的绝对路径。
 ROOT = Path(__file__).resolve().parents[2]
+# 烟雾检查使用的媒体样例文件路径。
 SAMPLE = ROOT / "logs" / "smoke_video.mp4"
+# 视频导出烟雾检查的输出文件路径。
 OUT = ROOT / "logs" / "smoke_video_export.mp4"
 
 
 def ensure_video() -> None:
+    """准备烟雾检查使用的视频样例文件。"""
+
     SAMPLE.parent.mkdir(parents=True, exist_ok=True)
     if SAMPLE.exists():
         return
@@ -30,6 +35,8 @@ def ensure_video() -> None:
 
 
 async def main() -> None:
+    """运行 export 相关的烟雾检查流程。"""
+
     ensure_video()
     if OUT.exists():
         OUT.unlink()

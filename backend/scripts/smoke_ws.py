@@ -1,4 +1,4 @@
-"""Quick WS protocol smoke test for P1-M01."""
+"""用于手工检查 ws 相关流程的辅助脚本。"""
 
 import asyncio
 import json
@@ -7,6 +7,8 @@ import websockets
 
 
 async def main() -> None:
+    """运行 ws 相关的烟雾检查流程。"""
+
     uri = "ws://127.0.0.1:8765/ws"
     async with websockets.connect(uri) as ws:
         hello = json.loads(await ws.recv())

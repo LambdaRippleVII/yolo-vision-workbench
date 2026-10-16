@@ -1,30 +1,28 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 128 128">
+  <title>YOLO Vision Workbench — 应用图标</title>
   <defs>
-    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#223244"/>
-      <stop offset="1" stop-color="#1B2A3A"/>
+    <linearGradient id="ink" gradientUnits="userSpaceOnUse" x1="6" y1="6" x2="46.6" y2="122">
+      <stop offset="0" stop-color="#1B2532"/>
+      <stop offset="1" stop-color="#0C121B"/>
+    </linearGradient>
+    <linearGradient id="amber" gradientUnits="userSpaceOnUse" x1="22" y1="12" x2="102" y2="112">
+      <stop offset="0" stop-color="#FFC247"/>
+      <stop offset="1" stop-color="#F29311"/>
     </linearGradient>
   </defs>
-  <!-- tile -->
-  <rect x="64" y="64" width="896" height="896" rx="200" fill="url(#tile)"/>
-  <!-- subtle inset border -->
-  <rect x="64" y="64" width="896" height="896" rx="200" fill="none" stroke="#2F3E50" stroke-width="2"/>
 
-  <!-- detection brackets -->
-  <g fill="none" stroke="#2F6FED" stroke-width="28" stroke-linecap="round" stroke-linejoin="round">
-    <!-- top-left -->
-    <path d="M220 340 V240 H320"/>
-    <!-- top-right -->
-    <path d="M704 240 H804 V340"/>
-    <!-- bottom-right -->
-    <path d="M804 684 V784 H704"/>
-    <!-- bottom-left -->
-    <path d="M320 784 H220 V684"/>
+  <!-- 磁贴 -->
+  <rect x="6" y="6" width="116" height="116" rx="30" fill="url(#ink)"/>
+  <rect x="6.75" y="6.75" width="114.5" height="114.5" rx="29.25" fill="none" stroke="#FFFFFF" stroke-opacity="0.09" stroke-width="1.5"/>
+
+  <!-- 取景框：左上 / 右下两段断角 -->
+  <g stroke="#A7B8CC" stroke-width="10" stroke-linecap="round" fill="none">
+    <path d="M24 58 V 40 Q 24 24 40 24 H 58"/>
+    <path d="M104 70 V 88 Q 104 104 88 104 H 70"/>
   </g>
 
-  <!-- lens / iris -->
-  <circle cx="512" cy="512" r="148" fill="none" stroke="#8FA6BF" stroke-width="22"/>
-  <circle cx="512" cy="512" r="96" fill="#172230"/>
-  <circle cx="512" cy="512" r="62" fill="#2F6FED" opacity="0.9"/>
-  <circle cx="488" cy="488" r="22" fill="#3ECFDB"/>
+  <!-- Y -->
+  <g stroke="url(#amber)" stroke-width="12" stroke-linecap="round" stroke-linejoin="round" fill="none">
+    <path d="M45 40 L64 61 L83 40 M64 61 L64 88"/>
+  </g>
 </svg>

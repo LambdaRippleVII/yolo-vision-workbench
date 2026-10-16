@@ -1,4 +1,4 @@
-/** Map technical errors to user-facing Chinese messages. */
+/** 将协议错误和底层异常整理成适合界面显示的简体中文提示。 */
 
 export function formatError(e: unknown): string {
   const raw = String(e ?? '')
@@ -30,7 +30,7 @@ export function formatError(e: unknown): string {
   if (raw.includes('INTERNAL')) {
     return '内部错误，请查看日志'
   }
-  // already Chinese or short technical
+  // 已经是中文或较短的技术错误时直接保留原文。
   if (/[\u4e00-\u9fff]/.test(raw)) return raw
   return raw.length > 80 ? raw.slice(0, 80) + '…' : raw
 }

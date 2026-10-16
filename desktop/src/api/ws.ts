@@ -1,9 +1,10 @@
-/** Minimal WebSocket client: connect, heartbeat, request/response, events. */
+/** 管理与本地后端的 WebSocket 连接、请求应答、心跳和断线重连。 */
 
 import type { Envelope, LogRecord } from './protocol'
 
 type MessageHandler = (msg: Envelope) => void
 
+/** 为渲染进程提供带超时和自动重连能力的 WebSocket 客户端。 */
 export class WsClient {
   private ws: WebSocket | null = null
   private url = ''
@@ -49,6 +50,7 @@ export class WsClient {
       this.startPing()
     }
 
+    // 忽略旧连接迟到的事件，避免它覆盖新连接状态。
     ws.onmessage = (ev) => {
       if (generation !== this.socketGeneration) return
       let msg: Envelope
@@ -57,7 +59,7 @@ export class WsClient {
       } catch {
         return
       }
-      // Resolve request/response
+      // 先按请求编号完成对应请求的响应。
       if (msg.id && this.pending.has(msg.id)) {
         const p = this.pending.get(msg.id)!
         this.pending.delete(msg.id)
@@ -67,7 +69,7 @@ export class WsClient {
           p.resolve(msg)
         }
       }
-      // Dispatch by type
+      // 再按消息类型分发给页面订阅者。
       const set = this.handlers.get(msg.type)
       if (set) {
         for (const h of set) h(msg)
@@ -91,7 +93,7 @@ export class WsClient {
     }
 
     ws.onerror = () => {
-      // onclose will follow
+      // 浏览器随后会触发 onclose 并统一处理断线。
     }
   }
 
@@ -99,7 +101,7 @@ export class WsClient {
     this.stopPing()
     this.pingTimer = window.setInterval(() => {
       void this.request('ping', {}).catch(() => {
-        /* heartbeat miss handled by onclose */
+        /* 心跳丢失由 onclose 的重连流程统一处理。 */
       })
     }, 15_000)
   }
@@ -130,6 +132,7 @@ export class WsClient {
     return () => this.handlers.get(type)?.delete(handler)
   }
 
+  /** 发送带唯一请求编号的消息，并等待匹配响应或超时。 */
   request<T = Record<string, unknown>>(type: string, data: Record<string, unknown>, timeoutMs = 30_000): Promise<Envelope<T>> {
     return new Promise((resolve, reject) => {
       if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
@@ -167,6 +170,7 @@ export class WsClient {
   }
 }
 
+// 前端各页面共用的长连接实例。
 export const wsClient = new WsClient()
 
 export async function fetchHealth(baseUrl: string): Promise<boolean> {

@@ -1,1 +1,1 @@
-"""YOLO Vision Workbench backend package."""
+"""实现后端应用的辅助功能。"""

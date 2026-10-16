@@ -18,12 +18,13 @@ const items = computed(() => [
 ])
 
 function go(path: string): void {
-  withViewTransition(() => { void router.push(path) })
+  withViewTransition(() => router.push(path))
 }
 </script>
 
 <template>
-  <nav class="side-nav slim" :aria-label="t('app.name')">
+  <!-- 左侧主导航：在检测工作区和资源管理页面之间切换。 -->
+  <nav class="side-nav" :aria-label="t('app.name')">
     <button
       v-for="item in items"
       :key="item.name"
@@ -38,38 +39,3 @@ function go(path: string): void {
     </button>
   </nav>
 </template>
-
-<style scoped>
-.side-nav.slim {
-  width: 56px;
-  padding-top: 8px;
-  gap: 2px;
-}
-.nav-item {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 3px;
-  padding: 10px 4px 8px;
-  border: none;
-  border-left: 3px solid transparent;
-  border-radius: 0;
-  background: transparent;
-  color: var(--text-secondary);
-}
-.nav-item:hover {
-  background: var(--bg-hover);
-  border-color: transparent;
-  color: var(--text-primary);
-}
-.nav-item.active {
-  background: var(--bg-active);
-  border-left-color: var(--accent);
-  color: var(--accent);
-}
-.nav-label {
-  font-size: 9px;
-  line-height: 1.2;
-  letter-spacing: 0;
-}
-</style>

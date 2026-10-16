@@ -79,6 +79,7 @@ function confirm(): void {
 </script>
 
 <template>
+  <!-- 弹窗式类别选择器，供用户批量配置要显示或检测的类别。 -->
   <div v-if="visible" class="mask" @click.self="emit('update:visible', false)">
     <div class="dialog">
       <div class="head">

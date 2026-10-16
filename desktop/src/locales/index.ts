@@ -7,10 +7,12 @@ import zhCN from './zh-CN'
 
 export type LocaleMessages = typeof zhCN
 
+// 当前随包提供的语言词条表；缺省语言为简体中文。
 const catalogs: Record<string, LocaleMessages> = {
   'zh-CN': zhCN
 }
 
+// 当前界面语言标识，找不到目标词条时回退到 zh-CN。
 let current: string = 'zh-CN'
 
 export function setLocale(locale: string): void {

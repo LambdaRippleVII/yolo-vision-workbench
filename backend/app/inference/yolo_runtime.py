@@ -1,8 +1,4 @@
-"""Ultralytics YOLO runtime adapter.
-
-Predict is intentionally isolated here. Upper layers must not call model.predict().
-If ultralytics is not installed, load_model raises ModelLoadError with a clear message.
-"""
+"""封装 Ultralytics YOLO 模型的加载、推理和释放。"""
 
 from __future__ import annotations
 
@@ -23,13 +19,19 @@ from app.inference.base import (
 
 
 class ModelLoadError(RuntimeError):
+    """表示模型权重或推理依赖无法正常加载。"""
+
     pass
 
 
 class YOLORuntime(BaseRuntime):
+    """把 Ultralytics YOLO 模型适配到统一推理接口。"""
+
     backend_type = BackendType.YOLO
 
     def __init__(self) -> None:
+        """初始化YOLORuntime实例并准备运行所需状态。"""
+
         super().__init__()
         self._model: Any = None
         self._config: Any = None
@@ -37,6 +39,16 @@ class YOLORuntime(BaseRuntime):
         self._model_id: str = ""
 
     def load_model(self, model_path: Path, config: Any) -> None:
+        """根据权重路径和模型配置初始化推理后端。
+
+        Args:
+            model_path: 模型权重文件路径。
+            config: 当前操作使用的应用或模型配置。
+
+        Raises:
+            ModelLoadError: 权重文件不存在、依赖缺失或模型加载失败时抛出。
+        """
+
         self._config = config
         self._model_id = getattr(config, "id", "model")
         task = getattr(config, "task", "detect")
@@ -73,20 +85,40 @@ class YOLORuntime(BaseRuntime):
         logger.info("YOLORuntime loaded model_id={} path={}", self._model_id, model_path)
 
     def unload_model(self) -> None:
+        """释放当前运行时持有的模型和推理资源。"""
+
         self._model = None
         self._loaded = False
         logger.info("YOLORuntime unloaded model_id={}", self._model_id)
 
     def get_classes(self) -> list[str]:
+        """返回模型运行时识别到的类别名称列表。
+
+        Returns:
+            当前模型的类别名称列表。
+        """
+
         return list(self._classes)
 
     def predict(self, image: np.ndarray) -> list[ResultObject]:
+        """对输入图像执行推理并转换为统一结果对象。
+
+        Args:
+            image: 待处理的图像数据。
+
+        Returns:
+            当前图像中检测到的统一结果对象列表。
+
+        Raises:
+            RuntimeError: 尚未加载模型或 Ultralytics 推理调用失败时抛出。
+        """
+
         if not self._loaded or self._model is None:
             raise RuntimeError("runtime not loaded")
 
         conf = float(getattr(self._config, "conf", 0.45))
         iou = float(getattr(self._config, "iou", 0.5))
-        # Encapsulate ultralytics call — upper layers never see model.predict()
+        # 封装 Ultralytics 调用，上层只接收统一的 ResultObject 列表。
         results = self._model.predict(image, conf=conf, iou=iou, verbose=False)
 
         objects: list[ResultObject] = []

@@ -1,12 +1,17 @@
+/** 管理打包版首次启动时的 Python 环境准备、依赖安装和状态上报。 */
 import { spawn, spawnSync, type ChildProcess } from 'child_process'
 import { EventEmitter } from 'events'
 import { promises as fs, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { StringDecoder } from 'string_decoder'
 
+// 就绪标记的结构版本；变更依赖校验规则时应同步递增。
 const RUNTIME_SCHEMA_VERSION = 1
+// 当随包 Python 未含 pip 时，用于获取 pip 引导脚本的官方地址。
 const PIP_BOOTSTRAP_URL = 'https://bootstrap.pypa.io/get-pip.py'
+// CPU 版 PyTorch 的官方 wheel 源。
 const PYTORCH_CPU_INDEX = 'https://download.pytorch.org/whl/cpu'
+// 安装 PyTorch 以外 Python 包时使用的默认包索引。
 const PYPI_INDEX = 'https://pypi.org/simple'
 
 export type RuntimeSetupPhase = 'initializing' | 'ready' | 'failed'
@@ -27,6 +32,7 @@ export interface RuntimeSetupOptions {
   backendDir: string
 }
 
+/** 执行首次运行初始化，并向渲染进程持续发布可读状态。 */
 export class RuntimeSetup extends EventEmitter {
   private readonly options: RuntimeSetupOptions
   private readonly installDir: string
@@ -59,6 +65,7 @@ export class RuntimeSetup extends EventEmitter {
 
   initialize(): Promise<string> {
     if (!this.options.managed) return Promise.resolve('')
+    // 合并并发的初始化请求，避免重复复制运行时或同时安装依赖。
     if (this.pending) return this.pending
 
     this.pending = this.initializeInternal().finally(() => {
@@ -97,9 +104,11 @@ export class RuntimeSetup extends EventEmitter {
       details: []
     })
 
+    // 先复制到用户可写目录，再启用嵌入式 Python 的 site-packages。
     await this.copyRuntimeToUserData()
     this.enableEmbeddedSitePackages()
 
+    // 只有标记版本、CPU 模式和关键依赖都通过探测时才跳过安装。
     if (this.hasReadyMarker()) {
       this.update({
         phase: 'initializing',
@@ -109,6 +118,7 @@ export class RuntimeSetup extends EventEmitter {
       return this.pythonPath
     }
 
+    // 依赖安装顺序保证基础服务先就绪，再安装推理框架并执行导入校验。
     await this.ensurePip()
 
     this.update({
@@ -177,6 +187,7 @@ export class RuntimeSetup extends EventEmitter {
     }
 
     await fs.mkdir(this.options.userDataDir, { recursive: true })
+    // 先在临时目录完成整份复制，校验后再切换正式目录，避免留下半套运行时。
     const stagedDir = join(this.options.userDataDir, 'python-runtime.installing')
     await fs.rm(stagedDir, { recursive: true, force: true })
     try {
@@ -206,6 +217,7 @@ export class RuntimeSetup extends EventEmitter {
       throw new Error('随包 Python 缺少 ._pth 配置文件，无法加载已安装的依赖。')
     }
 
+    // 嵌入式 Python 默认隔离第三方包；将用户目录的依赖路径加入 ._pth。
     for (const name of pthFiles) {
       const path = join(this.installDir, name)
       const lines = readFileSync(path, 'utf8').split(/\r?\n/)
@@ -224,6 +236,7 @@ export class RuntimeSetup extends EventEmitter {
         torchMode?: string
       }
       if (marker.schemaVersion !== RUNTIME_SCHEMA_VERSION || marker.torchMode !== 'cpu') return false
+      // 标记文件只作快速索引，启动时仍实际探测核心包，避免损坏安装被误判为完成。
       const probe = spawnSync(
         this.pythonPath,
         [
@@ -259,6 +272,7 @@ export class RuntimeSetup extends EventEmitter {
       step: '2/5 · 准备安装工具',
       message: '正在为随包 Python 安装 pip…'
     })
+    // 网络请求有超时且临时下载文件会在 finally 中清理，失败后可安全重试。
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), 60_000)
     let bootstrapPath = ''
@@ -299,6 +313,7 @@ export class RuntimeSetup extends EventEmitter {
     )
     if (cpuCheck.status === 0) return
 
+    // 即使已有 torch，也确认其为 CPU 构建，避免安装包意外依赖 CUDA 环境。
     const args = [
       '-m',
       'pip',

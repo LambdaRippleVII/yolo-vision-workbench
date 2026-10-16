@@ -70,11 +70,12 @@ onMounted(() => {
   wsClient.on('client.open', () => void refresh())
 })
 onUnmounted(() => {
-  /* noop */
+  /* 项目页当前不需要额外的提交动作。 */
 })
 </script>
 
 <template>
+  <!-- 项目列表与项目切换入口。 -->
   <div class="page">
     <div class="page-header">
       <h1 class="page-title">{{ t('projects.title') }}</h1>

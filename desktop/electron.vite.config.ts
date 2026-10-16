@@ -1,3 +1,4 @@
+/** 配置 Electron 主进程、预加载脚本和 Vue 渲染进程的构建入口。 */
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
 import vue from '@vitejs/plugin-vue'
 import { resolve } from 'path'

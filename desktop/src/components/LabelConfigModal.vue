@@ -141,6 +141,7 @@ function apply(): void {
 </script>
 
 <template>
+  <!-- 编辑检测框标签、文字样式和类别颜色，并提供实时画布预览。 -->
   <div v-if="visible" class="mask">
     <div class="dialog wide">
       <div class="dialog-head">
@@ -152,12 +153,12 @@ function apply(): void {
       </div>
 
       <div class="layout">
-        <!-- LEFT: preview -->
+        <!-- 左侧：标签预览 -->
         <div class="preview-col">
           <div class="sec">预览（点击标签可定位编辑）</div>
           <div class="preview-stage">
             <div class="demo-box" :style="{ border: `${local.box.lineWidth}px solid ${local.box.color}` }">
-              <!-- auto mode: single top label -->
+              <!-- 自动模式：只展示顶部标签 -->
               <div
                 v-if="local.mode === 'auto'"
                 class="demo-label top"
@@ -199,7 +200,7 @@ function apply(): void {
           </div>
         </div>
 
-        <!-- RIGHT: editors -->
+        <!-- 右侧：样式编辑器 -->
         <div class="edit-col">
           <div class="sec">位置模式</div>
           <div class="mode-row">
@@ -287,7 +288,7 @@ function apply(): void {
         <button type="button" class="primary" @click="apply">应用</button>
       </div>
 
-      <!-- nested style popup -->
+      <!-- 嵌套样式选择浮层 -->
       <div v-if="showStyleFor" class="style-mask" @click.self="showStyleFor = null">
         <div class="style-dialog">
           <h4>标签字体与颜色</h4>
@@ -379,11 +380,11 @@ function apply(): void {
   width: 860px;
   height: 560px;
   overflow: hidden;
-  background: linear-gradient(180deg, var(--bg-panel) 0%, var(--bg-inset) 100%);
+  background: var(--bg-panel);
   border: 1px solid var(--border);
-  border-radius: 16px;
+  border-radius: var(--radius-xl);
   padding: 0;
-  box-shadow: 0 24px 64px rgba(20, 28, 40, 0.22);
+  box-shadow: var(--shadow-md);
   position: relative;
   display: flex;
   flex-direction: column;

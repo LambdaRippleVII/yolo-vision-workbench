@@ -1,4 +1,4 @@
-"""Object edit ops: hide/show, style — persists to objects + ops."""
+"""处理检测对象编辑操作及其持久化请求。"""
 
 from __future__ import annotations
 
@@ -12,6 +12,12 @@ from app.websocket.server import ConnectionContext, WebSocketHub
 
 
 def register_ops_handlers(hub: WebSocketHub) -> None:
+    """注册检测对象显示和样式编辑消息处理器。
+
+    Args:
+        hub: 管理 WebSocket 连接及处理器的服务实例。
+    """
+
     async def on_set_visible(msg: dict[str, Any], ctx: ConnectionContext) -> dict[str, Any]:
         data = msg.get("data") or {}
         task_id = data.get("task_id")

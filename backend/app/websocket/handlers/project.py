@@ -1,4 +1,4 @@
-"""Project WebSocket handlers."""
+"""处理项目列表、创建、打开和切换请求。"""
 
 from __future__ import annotations
 
@@ -11,6 +11,13 @@ from app.websocket.server import ConnectionContext, WebSocketHub
 
 
 def register_project_handlers(hub: WebSocketHub, project_store) -> None:
+    """注册项目创建、列表和切换消息处理器。
+
+    Args:
+        hub: 管理 WebSocket 连接及处理器的服务实例。
+        project_store: 负责项目目录和元数据持久化的存储实例。
+    """
+
     async def on_list(msg: dict[str, Any], ctx: ConnectionContext) -> dict[str, Any]:
         projects = project_store.list_projects()
         return make_message(

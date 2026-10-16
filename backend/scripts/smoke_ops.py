@@ -1,4 +1,4 @@
-"""Smoke ops.setVisible persists and affects export."""
+"""用于手工检查 ops 相关流程的辅助脚本。"""
 
 from __future__ import annotations
 
@@ -8,11 +8,15 @@ from pathlib import Path
 
 import websockets
 
+# 后端仓库目录的绝对路径。
 ROOT = Path(__file__).resolve().parents[2]
+# 烟雾检查使用的媒体样例文件路径。
 SAMPLE = ROOT / "logs" / "smoke_video.mp4"
 
 
 async def main() -> None:
+    """运行 ops 相关的烟雾检查流程。"""
+
     async with websockets.connect("ws://127.0.0.1:8765/ws", max_size=20_000_000) as ws:
         await ws.recv()
         await ws.send(

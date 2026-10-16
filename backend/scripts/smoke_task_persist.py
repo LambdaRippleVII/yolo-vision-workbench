@@ -1,4 +1,4 @@
-"""Smoke: run detect then task.list shows persisted task."""
+"""用于手工检查 task persist 相关流程的辅助脚本。"""
 
 from __future__ import annotations
 
@@ -10,11 +10,19 @@ import cv2
 import numpy as np
 import websockets
 
+# 后端仓库目录的绝对路径。
 ROOT = Path(__file__).resolve().parents[2]
+# 烟雾检查使用的媒体样例文件路径。
 SAMPLE = ROOT / "logs" / "smoke_sample.jpg"
 
 
 async def main() -> None:
+    """运行 task persist 相关的烟雾检查流程。
+
+    Raises:
+        SystemExit: 将任务持久化烟雾检查失败状态传递给命令行。
+    """
+
     if not SAMPLE.exists():
         img = np.zeros((240, 320, 3), dtype=np.uint8)
         img[:] = (200, 210, 220)

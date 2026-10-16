@@ -1,4 +1,4 @@
-"""FastAPI application entry. Assembly only — no business logic here."""
+"""组装 FastAPI 服务、注册消息处理器并管理服务生命周期。"""
 
 from __future__ import annotations
 
@@ -34,16 +34,26 @@ from app.websocket.handlers import (
 from app.websocket.protocol import make_message
 from app.websocket.server import WebSocketHub
 
+# 后端启动时读取并固定使用的应用配置。
 config = load_config()
+# 按应用配置初始化日志，再构造服务组件，确保启动阶段的诊断信息可追踪。
 setup_logging(config.logs_dir, config.log_level)
 
+# 后端 WebSocket 连接与消息处理中心。
 hub = WebSocketHub(config)
+# 负责扫描、导入、加载和卸载模型的全局管理器。
 model_manager = ModelManager(config.models_dir, config.models_dir / "repository")
+# 负责创建、调度和跟踪推理任务的全局管理器。
 task_manager = TaskManager(model_manager)
 
 
 def _task_event(payload: dict) -> None:
-    """Forward task events to all WS clients from worker threads."""
+    """将工作线程发出的任务事件安全投递到 WebSocket 事件循环。
+
+    Args:
+        payload: 待保存或发送的数据负载。
+    """
+    # 将任务生命周期事件映射到前端约定的消息类型。
     event = payload.get("event", "progress")
     type_map = {
         "created": "task.progress",
@@ -60,10 +70,11 @@ def _task_event(payload: dict) -> None:
 
 task_manager.on_event(_task_event)
 
-# SQLite workspace DB (default project). Per-project DBs switch later via project.open.
+# 启动时连接默认项目数据库；切换项目时由 project.open 更新当前连接。
 db_connect(db_path_for_project(config.projects_dir, "default"))
 migrate()
 
+# 负责项目目录和当前项目信息的存储实例。
 project_store = ProjectStore(config.projects_dir)
 project_store.current_id = "default"
 
@@ -90,6 +101,12 @@ except Exception as exc:  # noqa: BLE001
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    """绑定异步事件循环并记录服务启动和关闭过程。
+
+    Args:
+        app: 正在启动或关闭的 FastAPI 应用实例。
+    """
+
     hub.bind_loop(asyncio.get_running_loop())
     logger.info(
         "backend starting host={} port={} root={}",
@@ -101,6 +118,7 @@ async def lifespan(app: FastAPI):
     logger.info("backend shutdown")
 
 
+# 供 Uvicorn 启动并注册 HTTP 与 WebSocket 路由的 FastAPI 应用。
 app = FastAPI(
     title="YOLO Vision Workbench Backend",
     version=config.app_version,
@@ -116,7 +134,17 @@ app.add_middleware(
 
 @app.api_route("/media", methods=["GET", "HEAD"])
 async def media(path: str):
-    """Serve local media for <video>/<img> preview (file:// is unreliable)."""
+    """校验媒体文件路径后返回供前端预览的本地文件响应。
+
+    Args:
+        path: 待读取、写入或检查的文件系统路径。
+
+    Returns:
+        指向校验通过媒体文件的 FastAPI 文件响应。
+
+    Raises:
+        HTTPException: 媒体路径不存在或不在允许的根目录内时返回 404。
+    """
     from fastapi import HTTPException
     from fastapi.responses import FileResponse
 
@@ -133,6 +161,12 @@ async def media(path: str):
 
 @app.get("/health")
 async def health() -> dict:
+    """返回服务就绪状态、版本和协议标识。
+
+    Returns:
+        包含就绪状态、应用版本、进程号、协议版本和产品标识的字典。
+    """
+
     return {
         "status": "ready",
         "version": config.app_version,
@@ -144,10 +178,18 @@ async def health() -> dict:
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket) -> None:
+    """把新连接交由 WebSocketHub 执行生命周期管理。
+
+    Args:
+        websocket: 当前客户端的 WebSocket 连接对象。
+    """
+
     await hub.handle_connection(websocket)
 
 
 def main() -> None:
+    """启动当前模块提供的命令行流程。"""
+
     import uvicorn
 
     uvicorn.run(

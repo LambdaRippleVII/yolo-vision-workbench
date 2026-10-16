@@ -1,4 +1,4 @@
-"""Model management WebSocket handlers."""
+"""处理模型查询、加载、下载、导入和类别配置请求。"""
 
 from __future__ import annotations
 
@@ -12,6 +12,13 @@ from app.websocket.server import ConnectionContext, WebSocketHub
 
 
 def register_model_handlers(hub: WebSocketHub, model_manager) -> None:
+    """注册模型查询、导入、下载和加载消息处理器。
+
+    Args:
+        hub: 管理 WebSocket 连接及处理器的服务实例。
+        model_manager: 负责查询和加载模型的管理器。
+    """
+
     async def on_list(msg: dict[str, Any], ctx: ConnectionContext) -> dict[str, Any]:
         models = model_manager.list_models()
         return make_message(
@@ -149,20 +156,68 @@ def register_model_handlers(hub: WebSocketHub, model_manager) -> None:
         item = model_manager.get_config(result["model_id"])
         payload = item.public_dict() if item else result
         payload["class_list"] = model_manager.list_models()
-        # prefer fresh class_list from list_models
+        # 优先使用刚从模型列表读取的最新类别清单。
         for m in model_manager.list_models():
             if m["model_id"] == result["model_id"]:
                 payload = m
                 break
         return make_message("model.import", {"ok": True, "model": payload}, id_=msg.get("id"))
 
+    async def on_attach_weights(msg: dict[str, Any], ctx: ConnectionContext) -> dict[str, Any]:
+        data = msg.get("data") or {}
+        model_id = data.get("model_id")
+        weight_path = data.get("weight_path")
+        if not model_id or not weight_path:
+            return make_error(
+                "model.attachWeights",
+                "BAD_REQUEST",
+                "model_id and weight_path are required",
+                id_=msg.get("id"),
+            )
+
+        cfg = model_manager.get_config(str(model_id))
+        if cfg is None:
+            return make_error(
+                "model.attachWeights",
+                "NOT_FOUND",
+                f"model not found: {model_id}",
+                id_=msg.get("id"),
+            )
+
+        try:
+            from app.model_manager.importer import attach_model_weights
+
+            model_manager.unload(str(model_id))
+            attach_model_weights(str(weight_path), cfg)
+            model_manager.refresh()
+            model_manager.init_class_lists()
+            model = next(
+                (item for item in model_manager.list_models() if item["model_id"] == str(model_id)),
+                None,
+            )
+            if model is None:
+                raise RuntimeError(f"model disappeared after importing weights: {model_id}")
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("model.attachWeights failed")
+            return make_error(
+                "model.attachWeights",
+                "IMPORT_FAILED",
+                str(exc),
+                id_=msg.get("id"),
+            )
+
+        return make_message(
+            "model.attachWeights",
+            {"ok": True, "model": model},
+            id_=msg.get("id"),
+        )
+
 
     async def on_download(msg: dict[str, Any], ctx: ConnectionContext) -> dict[str, Any]:
         data = msg.get("data") or {}
         from app.model_manager.downloader import HUB_NAME, download_weight
 
-        raw_model_ids = data.get("model_ids")
-        model_ids = raw_model_ids if raw_model_ids is not None else list(HUB_NAME)
+        model_ids = data.get("model_ids")
         if not isinstance(model_ids, list) or not model_ids:
             return make_error(
                 "model.downloadBuiltin",
@@ -215,3 +270,4 @@ def register_model_handlers(hub: WebSocketHub, model_manager) -> None:
     hub.register("model.refresh", on_refresh)
     hub.register("model.classDisplay", on_class_display)
     hub.register("model.import", on_import)
+    hub.register("model.attachWeights", on_attach_weights)

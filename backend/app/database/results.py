@@ -1,4 +1,4 @@
-"""Query detection results stored in SQLite."""
+"""查询持久化的检测结果并提取视频预览帧。"""
 
 from __future__ import annotations
 
@@ -10,6 +10,16 @@ from app.utils.image_io import open_video_capture
 
 
 def list_task_frames(task_id: str, *, limit: int = 500) -> list[dict[str, Any]]:
+    """读取任务的帧索引、检测对象数量和推理元信息。
+
+    Args:
+        task_id: 任务的唯一标识。
+        limit: 本次查询或保存允许处理的最大条目数。
+
+    Returns:
+        按帧号升序排列的帧摘要列表，最多包含 limit 条记录。
+    """
+
     conn = get_conn()
     rows = conn.execute(
         """
@@ -40,6 +50,16 @@ def list_task_frames(task_id: str, *, limit: int = 500) -> list[dict[str, Any]]:
 
 
 def get_frame_objects(task_id: str, frame_id: int) -> dict[str, Any]:
+    """读取指定帧及其全部检测对象，并整理为前端使用的结构。
+
+    Args:
+        task_id: 任务的唯一标识。
+        frame_id: 视频帧的零基索引。
+
+    Returns:
+        包含任务号、帧号、对象清单和帧是否存在的字典。
+    """
+
     conn = get_conn()
     frame_row = conn.execute(
         "SELECT * FROM frames WHERE task_id=? AND frame_id=?",
@@ -80,7 +100,16 @@ def get_frame_objects(task_id: str, frame_id: int) -> dict[str, Any]:
 
 
 def extract_video_frame_jpeg(video_path: str, frame_id: int, quality: int = 85) -> bytes | None:
-    """Return JPEG bytes of a single video frame (for replay preview)."""
+    """解码指定视频帧并编码为 JPEG 字节。
+
+    Args:
+        video_path: 视频文件路径。
+        frame_id: 视频帧的零基索引。
+        quality: JPEG 编码质量。
+
+    Returns:
+        JPEG 图像字节；视频或帧无法读取时返回 None。
+    """
     import cv2
 
     cap = open_video_capture(video_path)

@@ -27,6 +27,7 @@ onUnmounted(() => {
 </script>
 
 <template>
+  <!-- 展示可用摄像头和推理设备，并提供设备状态说明。 -->
   <div class="page">
     <div class="page-header">
       <h1 class="page-title">{{ t('devices.title') }}</h1>

@@ -1,4 +1,4 @@
-"""Update class display-name mapping and colors (persisted into YAML)."""
+"""更新模型类别的显示名称、颜色和颜色模式。"""
 
 from __future__ import annotations
 
@@ -18,7 +18,17 @@ def update_class_display(
     class_colors: dict[str, str] | None = None,
     class_color_mode: str | None = None,
 ) -> dict[str, Any]:
-    """Merge class_display / class_colors and write back to YAML if config_path exists."""
+    """更新模型的类别显示名、颜色和颜色模式。
+
+    Args:
+        model: 要更新类别显示信息的模型配置对象。
+        mapping: 按原始类别名映射的显示名称。
+        class_colors: 按类别名称映射的颜色配置。
+        class_color_mode: 类别颜色采用的生成或手动模式。
+
+    Returns:
+        更新后的类别显示映射、颜色映射和颜色模式。
+    """
     merged = dict(model.class_display or {})
     for k, v in mapping.items():
         if v:

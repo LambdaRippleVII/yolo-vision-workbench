@@ -1,9 +1,4 @@
-"""Export annotated video from source + per-frame results.
-
-Results source:
-  - explicit frames map: {frame_id: [objects]}
-  - or load from SQLite for a source task
-"""
+"""根据逐帧检测结果生成带标注的视频。"""
 
 from __future__ import annotations
 
@@ -19,6 +14,15 @@ from app.utils.image_io import open_video_capture, video_open_error_message
 
 
 def load_frame_objects(task_id: str) -> dict[int, list[dict[str, Any]]]:
+    """从数据库读取任务对象，并按帧编号组织检测对象。
+
+    Args:
+        task_id: 任务的唯一标识。
+
+    Returns:
+        以帧编号为键、检测对象列表为值的映射。
+    """
+
     conn = get_conn()
     rows = conn.execute(
         "SELECT frame_id, object_id, model_id, class_id, class_name, display_name, confidence, geom_type, geom_json, track_id, visible, style_json FROM objects WHERE task_id=? ORDER BY frame_id, object_id",
@@ -54,6 +58,26 @@ def export_video(
     progress_cb: Callable[[float], None] | None = None,
     cancel_cb: Callable[[], bool] | None = None,
 ) -> dict[str, Any]:
+    """逐帧读取源视频，绘制检测结果并写出 MP4 文件。
+
+    Args:
+        source_video: 原始视频文件路径。
+        output_path: 导出文件的目标路径。
+        frame_objects: 按帧编号索引的检测对象集合。
+        label_template: 用于拼接对象编号、类别和置信度的标签模板。
+        fps: 输出视频的帧率。
+        hidden_classes: 导出时需要隐藏的类别名称集合。
+        progress_cb: 接收归一化任务进度的回调函数。
+        cancel_cb: 返回是否已收到取消请求的回调函数。
+
+    Returns:
+        包含输出路径、处理帧数、标注帧数、帧率和尺寸的结果字典。
+
+    Raises:
+        FileNotFoundError: 源视频无法打开时抛出。
+        RuntimeError: 输出视频写入器无法打开时抛出。
+    """
+
     source_video = Path(source_video)
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)

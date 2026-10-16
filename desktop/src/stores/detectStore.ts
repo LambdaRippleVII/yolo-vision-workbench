@@ -1,4 +1,4 @@
-/** Persist image-detect workspace across route changes. */
+/** 共享图片检测工作区状态，使切换页面后仍能恢复媒体和筛选条件。 */
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import type { BoxObject } from '../components/CanvasStage.vue'
@@ -19,6 +19,7 @@ export interface ModelItem {
   class_list: Array<{ class_id: number; class_name: string; display_name: string }>
 }
 
+// 图片检测页与模型管理页共用的 Pinia 状态仓库。
 export const useDetectStore = defineStore('detect', () => {
   const mediaPath = ref('')
   const mediaKind = ref<'image' | 'folder' | 'unknown'>('unknown')

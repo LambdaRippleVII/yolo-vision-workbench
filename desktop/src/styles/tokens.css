@@ -1,123 +1,255 @@
 /**
- * 设计令牌 — Operate 产品 UI（参考 impeccable / craft-floor）
- * 浅色工作台默认；暗色 [data-theme="dark"]
+ * 设计令牌 — YOLO Vision Workbench「工坊 / Instrument」设计语言 v2
+ *
+ * 原则：
+ *  1) 界面是仪器，不是宣传页 —— 信息密度优先，装饰让位于数据
+ *  2) 单一强调色（琥珀 Signal Amber）只用于"状态 / 主操作 / 检测"，不做大面积铺色
+ *  3) 动效短促、有目的：150ms 级别，无弹跳、无发光、无玻璃拟态
+ *  4) 所有数字（延迟 / 置信度 / 坐标）等宽对齐
+ *
+ * 浅色为默认工作台；暗色 [data-theme="dark"]
  */
 
 :root {
   color-scheme: light;
 
-  --font-sans: 'Inter', 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', 'Noto Sans SC', system-ui, sans-serif;
-  --font-mono: 'JetBrains Mono', 'Cascadia Code', 'Consolas', ui-monospace, monospace;
+  /* 界面正文字体栈，按系统中可用的中英文字体依次回退。 */
+  --font-sans:
+    'Inter', 'Segoe UI Variable Text', 'Segoe UI', 'PingFang SC', 'HarmonyOS Sans SC',
+    'Microsoft YaHei UI', 'Noto Sans SC', system-ui, sans-serif;
+  /* 日志、坐标和数字使用的等宽字体栈。 */
+  --font-mono:
+    'JetBrains Mono', 'Cascadia Mono', 'SF Mono', 'Consolas', ui-monospace, monospace;
 
-  /* type: fixed scale, tight ratio (≈1.15) */
+  /* type: fixed scale ≈1.2, 标题收字距，微标签放宽字距 */
+  /* 极小辅助标签的字号。 */
   --text-xs: 11px;
+  /* 次级说明文字的字号。 */
   --text-sm: 12px;
+  /* 常规正文和控件文字的字号。 */
   --text-md: 13px;
+  /* 小标题和重点字段的字号。 */
   --text-lg: 15px;
-  --text-xl: 20px;
-  --text-display: 28px;
+  /* 页面标题的基础字号。 */
+  --text-xl: 19px;
+  /* 页面主标题的展示字号。 */
+  --text-display: 26px;
 
+  /* 标题使用的紧凑字距。 */
+  --tracking-tight: -0.012em;
+  /* 微标签和分组标题使用的宽字距。 */
+  --tracking-wide: 0.08em;
+
+  /* 基础间距单位，供组件内部的小间隔使用。 */
   --space-1: 4px;
+  /* 两个紧邻控件之间的间距。 */
   --space-2: 8px;
+  /* 表单字段和小组之间的间距。 */
   --space-3: 12px;
+  /* 常用卡片内边距和控件组间距。 */
   --space-4: 16px;
+  /* 中等区块之间的间距。 */
   --space-5: 20px;
+  /* 面板边缘和主要内容区的间距。 */
   --space-6: 24px;
-    --space-8: 32px;
+  /* 页面大区块之间的间距。 */
+  --space-8: 32px;
+  /* 同一内容组内的标准间距。 */
   --space-group: 12px;
+  /* 页面章节之间的标准间距。 */
   --space-section: 24px;
 
-  --radius-sm: 4px;
+  /* 标签、徽标等小控件的圆角。 */
+  --radius-xs: 3px;
+  /* 紧凑输入框和按钮的圆角。 */
+  --radius-sm: 5px;
+  /* 常规按钮和面板的圆角。 */
   --radius-md: 8px;
-  --radius-lg: 12px;
-  --radius-xl: 14px;
+  /* 较大卡片和浮层的圆角。 */
+  --radius-lg: 11px;
+  /* 对话框等大容器的圆角。 */
+  --radius-xl: 16px;
 
-    --bg-app: #f3f5f8;
+  /* 表面：纸白面板 + 略冷的石墨底，层次靠 1px 发丝线而不是投影 */
+  /* 应用窗口的全局底色。 */
+  --bg-app: #eef0f3;
+  /* 顶栏、导航等外层框架的底色。 */
   --bg-chrome: #ffffff;
-  --bg-content: #f3f5f8;
+  /* 主内容区域的底色。 */
+  --bg-content: #eef0f3;
+  /* 卡片、弹窗和控件的表面颜色。 */
   --bg-panel: #ffffff;
-  --bg-workspace: #e9edf3;
-  --bg-canvas: #e2e8f0;
-  --bg-hover: #eef2f8;
-  --bg-active: #dde7f7;
-  --bg-inset: #f6f8fb;
+  /* 工作区画布外侧的衬底颜色。 */
+  --bg-workspace: #e8ebef;
+  /* 图像或视频画布的底色。 */
+  --bg-canvas: #dfe3e9;
+  /* 悬停控件的反馈底色。 */
+  --bg-hover: #f0f2f5;
+  /* 选中项和按下控件的强调底色。 */
+  --bg-active: #ffe9c6;
+  /* 嵌套输入区域和工具栏的内嵌底色。 */
+  --bg-inset: #f6f7f9;
 
-  --border: #d0d8e4;
-  --border-strong: #a8b4c4;
+  /* 面板和控件的常规描边色。 */
+  --border: #e2e5ea;
+  /* 焦点和层级边界使用的加深描边色。 */
+  --border-strong: #c5ccd5;
 
-  /* contrast ≥ 4.5:1 on panel / app */
-  --text-primary: #15202e;
-  --text-secondary: #445266;
-  --text-muted: #66758a;
+  /* 对比度：正文/面板 ≥ 4.5:1 */
+  /* 主要标题和正文的文字颜色。 */
+  --text-primary: #161c25;
+  /* 次要说明和非焦点文字的颜色。 */
+  --text-secondary: #46515f;
+  /* 占位符及弱化说明文字的颜色。 */
+  --text-muted: #737e8c;
+  /* 强调色或深色背景上的反白文字颜色。 */
   --text-inverse: #ffffff;
 
-  --accent: #1f5fd0;
-  --accent-hover: #1749a8;
-  --accent-soft: #e3ecfb;
+  /* 强调色：Signal Amber —— 起重机/工作台上的那一抹安全色 */
+  /* 主操作按钮和检测标记的强调色。 */
+  --accent: #e8890c;
+  /* 主操作控件悬停时的强调色。 */
+  --accent-hover: #d2770a;
+  /* 强调色控件周围的浅色衬底。 */
+  --accent-soft: #fdf0dc;
+  /* 强调色实底上可读的文字颜色。 */
+  --accent-contrast: #2a1a02;
+  /* 浅色表面上可读的强调色文字。 */
+  --accent-ink: #96560a;
 
-  --success: #0f7a4a;
-  --success-soft: #e1f4ea;
-  --warning: #9a5b00;
-  --warning-soft: #fff1d6;
-  --danger: #c02a2a;
-  --danger-soft: #fdeaea;
-  --info: #1f6a8c;
-  --info-soft: #e2f1f7;
+  /* 成功状态和完成提示的前景色。 */
+  --success: #0e7a46;
+  /* 成功状态的浅色衬底。 */
+  --success-soft: #e2f3e9;
+  /* 需要留意但不阻断操作的提示色。 */
+  --warning: #a65b00;
+  /* 警告状态的浅色衬底。 */
+  --warning-soft: #fbeddc;
+  /* 错误状态和危险操作的前景色。 */
+  --danger: #c42b2b;
+  /* 错误状态的浅色衬底。 */
+  --danger-soft: #fbe9e9;
+  /* 信息提示的前景色。 */
+  --info: #1c6e8c;
+  /* 信息提示的浅色衬底。 */
+  --info-soft: #e3f0f5;
 
-  /* elevation: one system (soft offset shadow) */
-  --shadow-sm: 0 1px 2px rgba(21, 32, 46, 0.08);
-  --shadow-md: 0 8px 20px rgba(21, 32, 46, 0.12);
-  --focus-ring: 0 0 0 3px color-mix(in srgb, var(--accent) 35%, transparent);
+  /* 一套阴影语言：短而收敛，只为浮层/可拖拽元素准备 */
+  /* 常规控件的轻微层次阴影。 */
+  --shadow-sm: 0 1px 2px rgba(17, 24, 33, 0.07);
+  /* 菜单和中型浮层的阴影。 */
+  --shadow-md:
+    0 6px 18px -6px rgba(17, 24, 33, 0.16),
+    0 2px 6px -2px rgba(17, 24, 33, 0.08);
+  /* 对话框和高层级浮层的阴影。 */
+  --shadow-lg:
+    0 18px 44px -12px rgba(17, 24, 33, 0.22),
+    0 4px 12px -4px rgba(17, 24, 33, 0.12);
+  /* 键盘聚焦控件的双层轮廓阴影。 */
+  --focus-ring: 0 0 0 2px var(--bg-panel), 0 0 0 4px color-mix(in srgb, var(--accent) 55%, transparent);
 
-  --header-h: 52px;
-  --nav-w: 56px;
+  /* 应用顶部标题栏的高度。 */
+  --header-h: 50px;
+  /* 左侧主导航栏的宽度。 */
+  --nav-w: 64px;
+  /* 工作区辅助面板的宽度。 */
   --aside-w: 288px;
+  /* 控制台折叠后保留的状态栏高度。 */
   --console-collapsed-h: 36px;
 
-  --dur-fast: 150ms;
-  --dur-mid: 200ms;
-    --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
-  --spring: cubic-bezier(0.34, 1.3, 0.64, 1);
-  --dur-spring: 280ms;
+  /* 动效：三档时长 + 两条缓动曲线 */
+  /* 控件即时反馈的动画时长。 */
+  --dur-fast: 120ms;
+  /* 面板和选中状态变化的动画时长。 */
+  --dur-mid: 180ms;
+  /* 页面级浮层进出的动画时长。 */
+  --dur-slow: 280ms;
+  /* 浮层进出场使用的快速减速曲线。 */
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  /* 布局尺寸变化使用的平滑曲线。 */
+  --ease-inout: cubic-bezier(0.65, 0, 0.35, 1);
+  /* 拖拽反馈使用的无回弹跟手曲线。 */
+  --spring: cubic-bezier(0.32, 0.72, 0, 1);
+  /* 拖拽和跟手动画的持续时间。 */
+  --dur-spring: 240ms;
 }
 
 [data-theme='dark'] {
   color-scheme: dark;
 
-    --bg-app: #1c222b;
-  --bg-chrome: #232b36;
-  --bg-content: #1c222b;
-  --bg-panel: #232b36;
-  --bg-workspace: #181e26;
-  --bg-canvas: #12171e;
-  --bg-hover: #2b3441;
-  --bg-active: #31415a;
-  --bg-inset: #1e252f;
+  /* 暗色应用窗口的全局底色。 */
+  --bg-app: #10141a;
+  /* 暗色顶栏和导航框架的底色。 */
+  --bg-chrome: #161b22;
+  /* 暗色主内容区域的底色。 */
+  --bg-content: #10141a;
+  /* 暗色卡片和控件的表面颜色。 */
+  --bg-panel: #191f27;
+  /* 暗色工作区画布外侧的衬底颜色。 */
+  --bg-workspace: #0d1116;
+  /* 暗色图像和视频画布的底色。 */
+  --bg-canvas: #0a0d11;
+  /* 暗色悬停控件的反馈底色。 */
+  --bg-hover: #212832;
+  /* 暗色选中项和按下控件的强调底色。 */
+  --bg-active: #3b2b12;
+  /* 暗色嵌套输入区域的内嵌底色。 */
+  --bg-inset: #141a21;
 
-  --border: #3a4554;
-  --border-strong: #566478;
+  /* 暗色面板和控件的常规描边色。 */
+  --border: #262d37;
+  /* 暗色焦点和层级边界使用的加深描边色。 */
+  --border-strong: #3a434f;
 
-  --text-primary: #e8eef6;
-  --text-secondary: #b3c0d0;
-  --text-muted: #8b98a8;
-  --text-inverse: #ffffff;
+  /* 暗色主题下的主要文字颜色。 */
+  --text-primary: #e8ecf1;
+  /* 暗色主题下的次要说明文字颜色。 */
+  --text-secondary: #a9b3bf;
+  /* 暗色主题下的弱化文字和占位符颜色。 */
+  --text-muted: #7b8794;
+  /* 暗色强调背景上的反白文字颜色。 */
+  --text-inverse: #10141a;
 
-  --accent: #6aa4ff;
-  --accent-hover: #8fbbff;
-  --accent-soft: #243552;
+  /* 暗色主题下的主操作和检测强调色。 */
+  --accent: #ffa928;
+  /* 暗色主题下主操作控件的悬停色。 */
+  --accent-hover: #ffbc55;
+  /* 暗色主题下强调色的深色衬底。 */
+  --accent-soft: #35260d;
+  /* 暗色强调色实底上的文字颜色。 */
+  --accent-contrast: #241500;
+  /* 暗色表面上可读的强调色文字。 */
+  --accent-ink: #ffc46b;
 
-  --success: #3dcb8e;
-  --success-soft: #1c3a2e;
-  --warning: #e0b34c;
-  --warning-soft: #3a2f18;
-  --danger: #f07171;
-  --danger-soft: #3c2222;
-  --info: #6ec0e0;
-  --info-soft: #1e3340;
+  /* 暗色主题下成功状态的前景色。 */
+  --success: #3fc98a;
+  /* 暗色主题下成功状态的衬底色。 */
+  --success-soft: #123225;
+  /* 暗色主题下警告状态的前景色。 */
+  --warning: #e0a34c;
+  /* 暗色主题下警告状态的衬底色。 */
+  --warning-soft: #33260f;
+  /* 暗色主题下错误状态的前景色。 */
+  --danger: #f17171;
+  /* 暗色主题下错误状态的衬底色。 */
+  --danger-soft: #3a1e1e;
+  /* 暗色主题下信息提示的前景色。 */
+  --info: #6fc1de;
+  /* 暗色主题下信息提示的衬底色。 */
+  --info-soft: #152b33;
 
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
-  --shadow-md: 0 10px 28px rgba(0, 0, 0, 0.4);
-  --focus-ring: 0 0 0 3px color-mix(in srgb, var(--accent) 40%, transparent);
+  /* 暗色主题下控件的轻微层次阴影。 */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.32);
+  /* 暗色主题下中型浮层的阴影。 */
+  --shadow-md:
+    0 8px 22px -8px rgba(0, 0, 0, 0.5),
+    0 2px 6px -2px rgba(0, 0, 0, 0.35);
+  /* 暗色主题下高层级浮层的阴影。 */
+  --shadow-lg:
+    0 22px 52px -14px rgba(0, 0, 0, 0.62),
+    0 6px 14px -6px rgba(0, 0, 0, 0.4);
+  /* 暗色主题下键盘聚焦控件的双层轮廓阴影。 */
+  --focus-ring: 0 0 0 2px var(--bg-panel), 0 0 0 4px color-mix(in srgb, var(--accent) 60%, transparent);
 }
 
 * {
@@ -127,15 +259,22 @@
 }
 
 *::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 8px;
+  height: 8px;
 }
 *::-webkit-scrollbar-track {
   background: transparent;
 }
 *::-webkit-scrollbar-thumb {
-  background: var(--border-strong);
+  background: color-mix(in srgb, var(--border-strong) 75%, transparent);
   border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--border-strong);
+  background-clip: padding-box;
+  border: 2px solid transparent;
 }
 
 html,
@@ -149,10 +288,11 @@ body,
   font-size: var(--text-md);
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 ::selection {
-  background: color-mix(in srgb, var(--accent) 28%, transparent);
+  background: color-mix(in srgb, var(--accent) 32%, transparent);
   color: var(--text-primary);
 }
 
@@ -164,6 +304,7 @@ textarea {
   color: inherit;
 }
 
+/* ── 控件：1px 发丝边 + 轻投影，主操作用强调色实底 ── */
 button {
   cursor: pointer;
   border: 1px solid var(--border);
@@ -171,10 +312,13 @@ button {
   color: var(--text-primary);
   border-radius: var(--radius-md);
   padding: 6px 12px;
+  font-size: var(--text-md);
   transition:
     background var(--dur-fast) var(--ease),
     border-color var(--dur-fast) var(--ease),
-    color var(--dur-fast) var(--ease);
+    color var(--dur-fast) var(--ease),
+    box-shadow var(--dur-fast) var(--ease),
+    transform var(--dur-fast) var(--ease);
 }
 
 button:hover:not(:disabled) {
@@ -184,6 +328,7 @@ button:hover:not(:disabled) {
 
 button:active:not(:disabled) {
   background: var(--bg-active);
+  transform: translateY(0.5px);
 }
 
 button:disabled {
@@ -203,13 +348,18 @@ textarea:focus-visible,
 
 button.primary {
   background: var(--accent);
-  border-color: var(--accent);
-  color: var(--text-inverse);
+  border-color: color-mix(in srgb, var(--accent) 82%, #000);
+  color: var(--accent-contrast);
+  font-weight: 600;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28);
 }
 
 button.primary:hover:not(:disabled) {
   background: var(--accent-hover);
-  border-color: var(--accent-hover);
+  border-color: color-mix(in srgb, var(--accent-hover) 82%, #000);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.28),
+    var(--shadow-sm);
 }
 
 button.ghost {
@@ -233,14 +383,29 @@ button.danger:hover:not(:disabled) {
   background: var(--danger-soft);
 }
 
+/* 数字一律等宽对齐：延迟、置信度、坐标、帧号 */
 .num {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+/* 微标签：给分组标题/字段名用的排版工具 */
+.micro-label {
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--text-muted);
 }
 
 @media (prefers-reduced-motion: reduce) {
-  * {
+  *,
+  *::before,
+  *::after {
     transition-duration: 0.01ms !important;
     animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
   }
 }

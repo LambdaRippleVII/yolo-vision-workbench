@@ -1,4 +1,4 @@
-"""Scan models directories for YAML configs."""
+"""扫描模型目录并解析模型配置文件。"""
 
 from __future__ import annotations
 
@@ -11,6 +11,16 @@ from app.model_manager.config_schema import ModelConfig
 
 
 def _load_one(path: Path, source: str) -> ModelConfig | None:
+    """读取单个模型 YAML 配置并处理无效配置。
+
+    Args:
+        path: 待读取、写入或检查的文件系统路径。
+        source: 模型或数据的来源标识。
+
+    Returns:
+        解析后的模型配置；配置无效时返回 None。
+    """
+
     try:
         raw = yaml.safe_load(path.read_text(encoding="utf-8"))
         if not isinstance(raw, dict):
@@ -28,7 +38,15 @@ def _load_one(path: Path, source: str) -> ModelConfig | None:
 
 
 def scan_models(models_dir: Path, repository_dir: Path | None = None) -> list[ModelConfig]:
-    """Collect ModelConfig from local examples/user dirs and optional repository packages."""
+    """扫描用户模型目录和内置仓库中的模型配置。
+
+    Args:
+        models_dir: 本地模型及权重文件的根目录。
+        repository_dir: 内置模型仓库目录。
+
+    Returns:
+        按来源去重后的模型配置列表。
+    """
     found: list[ModelConfig] = []
     seen_ids: set[str] = set()
 

@@ -158,7 +158,8 @@ export default {
   'models.selectModelHint': '左侧选择一个模型以编辑映射',
   'models.empty': '在「模型管理」中添加模型配置',
   'models.loaded': '已加载',
-  'models.unloaded': '未加载',
+  'models.unloaded': '未载入内存',
+  'models.manualImportWeights': '需手动导入权重',
 
   'datasets.title': '数据集',
   'datasets.empty': '项目中的图片与视频将显示在这里',

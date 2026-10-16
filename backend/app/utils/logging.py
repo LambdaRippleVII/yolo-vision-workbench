@@ -1,4 +1,4 @@
-"""loguru setup: file sink + optional WebSocket broadcast sink."""
+"""配置 Loguru 日志并把日志事件转发给 WebSocket 客户端。"""
 
 from __future__ import annotations
 
@@ -8,13 +8,20 @@ from typing import Callable
 
 from loguru import logger
 
-# Remove default stderr sink; we re-add a clean one.
+# 移除 Loguru 默认 stderr 输出，再添加统一格式的终端 sink。
 logger.remove()
 
+# 保存当前已注册的 WebSocket 日志接收回调。
 _ws_sinks: list[Callable[[dict], None]] = []
 
 
 def broadcast_log(record: dict) -> None:
+    """将结构化日志记录推送到当前 WebSocket 日志订阅者。
+
+    Args:
+        record: Loguru 捕获的结构化日志记录。
+    """
+
     for sink in list(_ws_sinks):
         try:
             sink(record)
@@ -23,15 +30,33 @@ def broadcast_log(record: dict) -> None:
 
 
 def add_ws_sink(sink: Callable[[dict], None]) -> None:
+    """注册一个接收日志事件的 WebSocket 回调。
+
+    Args:
+        sink: 接收结构化日志事件的回调函数。
+    """
+
     _ws_sinks.append(sink)
 
 
 def remove_ws_sink(sink: Callable[[dict], None]) -> None:
+    """移除已注册的 WebSocket 日志回调。
+
+    Args:
+        sink: 接收结构化日志事件的回调函数。
+    """
+
     if sink in _ws_sinks:
         _ws_sinks.remove(sink)
 
 
 def _ws_sink(message) -> None:  # loguru Message
+    """把 Loguru 记录转换为前端日志负载后广播。
+
+    Args:
+        message: 待发送或解析的协议消息。
+    """
+
     record = message.record
     payload = {
         "level": record["level"].name,
@@ -44,6 +69,13 @@ def _ws_sink(message) -> None:  # loguru Message
 
 
 def setup_logging(logs_dir: Path, level: str = "INFO") -> None:
+    """配置文件轮转、控制台输出和 WebSocket 日志转发。
+
+    Args:
+        logs_dir: 日志文件保存目录。
+        level: 日志级别名称，例如 ``INFO`` 或 ``DEBUG``。
+    """
+
     logs_dir.mkdir(parents=True, exist_ok=True)
     log_file = logs_dir / "yolo-vision-workbench_{time:YYYYMMDD}.log"
 

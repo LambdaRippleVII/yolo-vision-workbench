@@ -1,4 +1,4 @@
-"""Video detection WebSocket handlers."""
+"""处理视频信息检查和视频检测任务请求。"""
 
 from __future__ import annotations
 
@@ -16,6 +16,19 @@ from app.websocket.server import ConnectionContext, WebSocketHub
 
 
 def _inspect_video(media_path: str) -> dict[str, Any]:
+    """尝试打开视频并提取帧率、尺寸和帧数等元信息。
+
+    Args:
+        media_path: 输入媒体文件路径。
+
+    Returns:
+        包含宽高、帧率、帧数、时长和首帧 URL 的视频信息。
+
+    Raises:
+        FileNotFoundError: 视频文件不存在或不可访问时抛出。
+        RuntimeError: 视频无法打开或无法读取首帧时抛出。
+    """
+
     import cv2
 
     path = Path(media_path).expanduser()
@@ -58,6 +71,13 @@ def _inspect_video(media_path: str) -> dict[str, Any]:
 
 
 def register_video_handlers(hub: WebSocketHub, task_manager) -> None:
+    """注册视频检查和视频推理消息处理器。
+
+    Args:
+        hub: 管理 WebSocket 连接及处理器的服务实例。
+        task_manager: 负责创建和调度任务的管理器。
+    """
+
     async def on_inspect(msg: dict[str, Any], ctx: ConnectionContext) -> dict[str, Any]:
         data = msg.get("data") or {}
         media_path = data.get("media_path")
@@ -87,7 +107,7 @@ def register_video_handlers(hub: WebSocketHub, task_manager) -> None:
 
         skip_frame = int(data.get("skip_frame") or 5)
         box_persistence = int(data.get("box_persistence") or skip_frame)
-        # preference: persistence cannot exceed skip interval
+        # 约束关系：结果持久化间隔不能大于跳帧间隔。
         if box_persistence > skip_frame:
             box_persistence = skip_frame
 

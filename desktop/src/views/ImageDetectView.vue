@@ -2,7 +2,7 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import CanvasStage, { type BoxObject } from '../components/CanvasStage.vue'
 import type { LabelSettings } from '../components/labelTypes'
-import { defaultLabelSettings } from '../components/labelTypes'
+import { DEFAULT_BOX_COLOR, defaultLabelSettings } from '../components/labelTypes'
 import ClassPickerModal from '../components/ClassPickerModal.vue'
 import MoreSettingsModal from '../components/MoreSettingsModal.vue'
 import LabelConfigModal from '../components/LabelConfigModal.vue'
@@ -124,15 +124,14 @@ async function downloadBuiltinModel(modelId: string): Promise<boolean> {
 async function ensureModelLoaded(modelId: string): Promise<boolean> {
   const model = models.value.find((item) => item.model_id === modelId)
   if (model?.runtime_available === false) {
-    errorMsg.value = 'YOLO 推理组件尚未准备好。请关闭并重新打开软件，在首次启动初始化提示中重试安装。'
+    errorMsg.value = 'YOLO 推理组件尚未准备好。请在首次启动初始化提示中点击「重试初始化」并等待完成。'
     return false
   }
   if (model?.weights_available === false) {
-    if (!model.downloadable) {
-      errorMsg.value = `模型「${model.name}」缺少权重文件，请先在模型管理中导入对应权重。`
-      return false
-    }
-    if (!(await downloadBuiltinModel(modelId))) return false
+    errorMsg.value = model.downloadable
+      ? `模型「${model.name}」尚未下载权重，请先点击模型旁的「下载 / 重试」按钮。`
+      : `模型「${model.name}」尚未导入权重，请到「模型管理」点击「导入权重」选择本地文件。`
+    return false
   }
 
   try {
@@ -181,7 +180,7 @@ function looksLikeImagePath(p: string): boolean {
 function looksLikeFolderPath(p: string): boolean {
   if (!p) return false
   if (looksLikeImagePath(p)) return false
-  // Windows folder often has no extension
+  // Windows 文件夹通常没有扩展名，因此不能只靠 MIME 类型判断目录。
   return !/\.[a-z0-9]+$/i.test(p)
 }
 
@@ -201,7 +200,7 @@ async function pickFolder(): Promise<void> {
   mediaKind.value = 'folder'
   imageUrl.value = ''
   objects.value = []
-  // only list album — do NOT run detect
+  // 选择目录时只加载相册，不自动发起推理任务。
   await loadFolderAlbum(path)
 }
 
@@ -223,6 +222,7 @@ async function pickImage(): Promise<void> {
   selectedId.value = null
 }
 
+/** 请求目录图片与缩略图清单，供用户先浏览再明确启动批量识别。 */
 async function loadFolderAlbum(path: string): Promise<void> {
   try {
     const resp = await wsClient.request('media.listFolder', {
@@ -233,7 +233,7 @@ async function loadFolderAlbum(path: string): Promise<void> {
       []) as Array<{ path: string; name: string; thumb_url?: string }>
     gallery.value = items.map((it) => ({
       path: it.path,
-      url: '', // full image loaded on select
+      url: '', // 选择缩略图后再读取完整图片。
       thumb: it.thumb_url || '',
       name: it.name,
       status: 'idle'
@@ -259,7 +259,7 @@ async function loadFullImage(item: GalleryItem): Promise<void> {
       return
     }
   }
-  // fallback to thumb only if full read fails
+  // 完整图像读取失败时才使用缩略图，确保画布仍有可显示内容。
   if (item.thumb) {
     item.url = item.thumb
     imageUrl.value = item.thumb
@@ -322,7 +322,7 @@ async function runFolder(path: string, filePaths?: string[]): Promise<void> {
     errorMsg.value = t('workbench.noModel')
     return
   }
-  // album must already be loaded; if not, load first without auto-detect
+  // 批量识别前保证相册已加载；加载过程本身不会自动开始检测。
   if (!gallery.value.length) {
     await loadFolderAlbum(path)
   }
@@ -332,9 +332,9 @@ async function runFolder(path: string, filePaths?: string[]): Promise<void> {
   }
   const targets = filePaths && filePaths.length ? filePaths : [...selectedGalleryPaths.value]
   if (filePaths && filePaths.length) {
-    // explicit list
+    // 拖入或勾选产生的显式路径清单优先于“全选”默认行为。
   } else if (!selectedGalleryPaths.value.size) {
-    // none selected → all images
+    // 用户没有指定子集时，将目录中的全部图片作为识别目标。
     selectedGalleryPaths.value = new Set(gallery.value.map((g) => g.path))
   }
   const sendList = targets.length
@@ -367,20 +367,20 @@ async function runFolder(path: string, filePaths?: string[]): Promise<void> {
 }
 
 async function buildGalleryFromFolder(_path: string): Promise<void> {
-  // Folder gallery is filled incrementally from task.progress frames when available
-  // Fallback: if dropped File objects exist they were already added
+  // 目录相册优先由任务进度事件逐项补充；拖入的 File 则在导入时已加入列表。
 }
 
+/** 将浏览器拖入的图片转换为后端可访问的绝对路径，并保留预览地址。 */
 async function fileToTempPath(file: File): Promise<{ path: string; url: string } | null> {
   const api = window.yoloStudio
-  // Prefer real path (drag from Explorer in Electron)
+  // 从资源管理器拖入时优先使用 Electron 提供的真实文件路径。
   const realPath = (file as File & { path?: string }).path
   if (realPath && api?.readImageBase64) {
     const url = (await api.readImageBase64(realPath)) || ''
     return { path: realPath, url }
   }
   if (!api?.writeTempImage) {
-    // browser fallback: object URL only (cannot send to backend as path)
+    // 普通浏览器没有本地路径桥接，只能创建预览 URL，无法提交后端推理。
     return { path: file.name, url: URL.createObjectURL(file) }
   }
   const b64 = await new Promise<string>((resolveB64, reject) => {
@@ -420,9 +420,10 @@ function addFilesToGallery(files: File[]): void {
 }
 
 function selectGalleryLocalPlaceholder(): void {
-  /* replaced by async selectGallery above */
+  /* 已由上方的异步 selectGallery 流程取代，保留空实现以兼容旧模板。 */
 }
 
+/** 统一通过 Electron API 或兼容字段取得拖入文件的本地路径。 */
 function resolveDropPath(file: File): string {
   const api = window.yoloStudio
   if (api?.getPathForFile) {
@@ -435,10 +436,11 @@ function resolveDropPath(file: File): string {
 function isProbablyDir(p: string): boolean {
   if (!p) return false
   if (looksLikeImagePath(p)) return false
-  // no extension → folder
+  // 没有扩展名时按目录处理，兼容 Windows 文件夹拖放。
   return !/\.[a-z0-9]+$/i.test(p)
 }
 
+/** 识别拖放内容是文件夹、单张图片还是多张图片，再分发到对应导入流程。 */
 async function handleDrop(ev: DragEvent): Promise<void> {
   dragging.value = false
   errorMsg.value = ''
@@ -448,7 +450,7 @@ async function handleDrop(ev: DragEvent): Promise<void> {
 
   const files = dt.files
   if (!files || !files.length) {
-    // try items / entries
+    // 部分 Chromium 版本不填充 files，改从 DataTransferItem 和目录条目读取。
     const items = dt.items
     if (items?.length) {
       for (const item of Array.from(items)) {
@@ -477,7 +479,7 @@ async function handleDrop(ev: DragEvent): Promise<void> {
     path: resolveDropPath(f)
   }))
 
-  // single folder drop
+  // 单个拖入项优先判定目录，再判定图片。
   if (resolved.length === 1) {
     const one = resolved[0]
     if (isProbablyDir(one.path) || !one.file.type) {
@@ -515,7 +517,7 @@ async function handleDrop(ev: DragEvent): Promise<void> {
     }
   }
 
-  // multiple images or mixed
+  // 多项拖入时分别收集目录与图片，优先处理唯一目录或图片清单。
   const imagePaths = resolved.filter((x) => x.path && looksLikeImagePath(x.path))
   const dirPaths = resolved.filter((x) => x.path && isProbablyDir(x.path))
 
@@ -543,7 +545,7 @@ async function handleDrop(ev: DragEvent): Promise<void> {
     return
   }
 
-  // last resort: image files without path (clipboard-like)
+  // 无法取得本地路径时，最后尝试按剪贴板图片方式导入。
   addFilesToGallery(list.filter((f) => f.type.startsWith('image/')))
 }
 
@@ -566,7 +568,7 @@ async function startInfer(): Promise<void> {
     errorMsg.value = t('workbench.canvasHint')
     return
   }
-  // folder path must never go through detect.image
+  // 目录必须走批量检测接口，避免把目录路径误传给单图推理接口。
   if (mediaKind.value === 'folder' || looksLikeFolderPath(mediaPath.value)) {
     const paths = [...selectedGalleryPaths.value]
     await runFolder(mediaPath.value, paths.length ? paths : undefined)
@@ -695,7 +697,7 @@ onMounted(() => {
     errorMsg.value = ''
     void loadModels()
   })
-  // folder task results as gallery
+  // 将目录任务进度中的帧结果同步为相册条目。
   wsClient.on('task.progress', (msg: { data?: Record<string, unknown> }) => {
     void (async () => {
       const d = (msg.data || {}) as {
@@ -780,6 +782,7 @@ onUnmounted(() => {
 </script>
 
 <template>
+  <!-- 图片检测工作区：导入图片或目录、配置模型并浏览识别结果。 -->
   <div
     class="page image-page"
     :class="{ dragging }"
@@ -865,7 +868,7 @@ onUnmounted(() => {
                     missing: m.runtime_available === false || m.weights_available === false
                   }"
                 >
-                  {{ m.runtime_available === false ? '推理组件缺失' : m.weights_available === false ? (m.downloadable ? '未下载' : '缺少权重') : m.loaded ? t('models.loaded') : t('models.unloaded') }}
+                  {{ m.runtime_available === false ? '推理组件缺失' : m.weights_available === false ? (m.downloadable ? '未下载' : t('models.manualImportWeights')) : m.loaded ? t('models.loaded') : t('models.unloaded') }}
                 </span>
                 <button
                   v-if="m.weights_available === false && m.downloadable"
@@ -874,7 +877,7 @@ onUnmounted(() => {
                   :disabled="Boolean(downloadingModelId) || m.runtime_available === false"
                   @click.stop="downloadBuiltinModel(m.model_id)"
                 >
-                  {{ downloadingModelId === m.model_id ? '下载中…' : '下载' }}
+                  {{ downloadingModelId === m.model_id ? '下载中…' : '下载 / 重试' }}
                 </button>
               </div>
             </div>
@@ -902,7 +905,7 @@ onUnmounted(() => {
               :class="{ selected: selectedId === o.id }"
               @click="selectedId = o.id"
             >
-              <span class="swatch" :style="{ background: o.style?.color || '#2F6FED' }" />
+              <span class="swatch" :style="{ background: o.style?.color || DEFAULT_BOX_COLOR }" />
               <span>{{ o.id }}:{{ o.display }}</span>
               <span class="num conf">{{ o.confText }}</span>
               <button type="button" class="ghost mini" @click.stop="toggleVisible(o.id)">

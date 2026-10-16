@@ -4,6 +4,7 @@ import CanvasStage, { type BoxObject } from '../components/CanvasStage.vue'
 import ModelPicker from '../components/ModelPicker.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import EmptyState from '../components/EmptyState.vue'
+import { DEFAULT_BOX_COLOR } from '../components/labelTypes'
 import { wsClient } from '../api/ws'
 import { formatError } from '../utils/errors'
 import { t } from '../locales'
@@ -58,12 +59,12 @@ const selectedModels = ref<string[]>([])
 const downloadingModelId = ref('')
 const skipFrame = ref(5)
 const boxPersistence = ref(5)
-/** timeline precision: 1 = every frame */
+/** 时间轴采样精度；1 表示显示每一帧。 */
 const timelineStep = ref(1)
 const filmstrip = ref<HTMLElement | null>(null)
 const thumbs = ref<Record<number, string>>({})
 const hiddenClasses = ref<Set<string>>(new Set())
-/** timeline UI mode: filmstrip thumbs vs PR-style track bar */
+/** 时间轴界面模式：胶片缩略图或剪辑软件式轨道。 */
 const timelineMode = ref<'filmstrip' | 'track'>('filmstrip')
 const draggingPlayhead = ref(false)
 let videoPreviewRequestId = 0
@@ -191,6 +192,7 @@ async function pickVideo(): Promise<void> {
   }
 }
 
+/** 重置旧视频的帧、任务和选择状态，再为新路径启动预览加载。 */
 async function setVideo(path: string): Promise<void> {
   videoSelectionId += 1
   videoPath.value = path
@@ -225,6 +227,7 @@ function previewErrorMessage(message: string): void {
   infoMsg.value = ''
 }
 
+/** 通过后端解码视频信息和首帧；同一选择请求复用同一个检查 Promise。 */
 function requestVideoInspection(path: string, requestId: number): Promise<VideoInspectInfo> {
   if (videoInspectRequestId === requestId && videoInspectPromise) return videoInspectPromise
 
@@ -232,7 +235,7 @@ function requestVideoInspection(path: string, requestId: number): Promise<VideoI
   videoInspectPromise = wsClient
     .request('video.inspect', { media_path: path }, 60_000)
     .then((response) => {
-      const info = response.data as VideoInspectInfo
+      const info = response.data as unknown as VideoInspectInfo
       if (!info?.poster_url) throw new Error('后端没有返回可用的视频首帧。')
       if (requestId === videoPreviewRequestId) {
         videoPosterUrl.value = info.poster_url
@@ -254,6 +257,7 @@ function requestVideoInspection(path: string, requestId: number): Promise<VideoI
 
 let videoInspectError = ''
 
+/** 后端恢复连接后重试首帧提取，避免用户重新选择同一个视频。 */
 function retryVideoInspectionAfterReconnect(): void {
   const path = videoPath.value
   const requestId = videoPreviewRequestId
@@ -269,7 +273,7 @@ function retryVideoInspectionAfterReconnect(): void {
       infoMsg.value = '可以继续点击「开始推理」。需要播放视频时，请转换为 H.264 MP4。'
     })
     .catch(() => {
-      /* Keep the visible preview error; the user can retry after the backend reconnects. */
+      /* 保留当前可见的预览错误，用户可在后端重新连接后再次尝试。 */
     })
 }
 
@@ -285,6 +289,7 @@ function armVideoPreviewTimeout(path: string, requestId: number): void {
   }, 10_000)
 }
 
+/** 本地 file URL 播放失败时切到后端媒体路由，并重新启动预览超时计时。 */
 function switchToHttpPreview(path: string, requestId: number, reason: string): void {
   if (requestId !== videoPreviewRequestId || !videoHttpFallbackUrl) return
   videoHttpFallbackRequestId = requestId
@@ -296,6 +301,7 @@ function switchToHttpPreview(path: string, requestId: number, reason: string): v
   armVideoPreviewTimeout(path, requestId)
 }
 
+/** 原生播放器和 HTTP 预览失败时，请求后端用 OpenCV 解码并显示首帧。 */
 async function fallbackToOpenCvPreview(path: string, reason: string, requestId: number): Promise<void> {
   if (requestId !== videoPreviewRequestId || videoOpenCvFallbackRequestId === requestId) return
   videoOpenCvFallbackRequestId = requestId
@@ -318,6 +324,7 @@ async function fallbackToOpenCvPreview(path: string, reason: string, requestId: 
   }
 }
 
+/** 建立一次带请求序号的预览流程，并准备 file URL 与后端 URL 两级回退。 */
 async function loadVideoPreview(path: string): Promise<void> {
   const requestId = ++videoPreviewRequestId
   clearVideoPreviewTimer()
@@ -342,7 +349,7 @@ async function loadVideoPreview(path: string): Promise<void> {
     try {
       localUrl = (await api?.mediaUrl?.(path)) || ''
     } catch {
-      /* Fall back to the local backend media route below. */
+      /* Electron 文件 URL 不可用时，后续改用本地后端媒体路由。 */
     }
     let baseUrl = 'http://127.0.0.1:8765'
     try {
@@ -351,7 +358,7 @@ async function loadVideoPreview(path: string): Promise<void> {
         baseUrl = wsUrl.replace(/^wss:/i, 'https:').replace(/^ws:/i, 'http:').replace(/\/ws\/?$/i, '')
       }
     } catch {
-      /* A selected local file can still be opened directly by Electron. */
+      /* 即使暂时拿不到 WebSocket 地址，也可以继续尝试 Electron 文件 URL。 */
     }
     if (requestId !== videoPreviewRequestId) return
     videoHttpFallbackUrl = `${baseUrl}/media?path=${encodeURIComponent(path)}`
@@ -416,6 +423,7 @@ function onVideoError(ev: Event): void {
   void fallbackToOpenCvPreview(videoPath.value, detail, videoPreviewRequestId)
 }
 
+/** 校验所选模型的运行时与权重状态，再向后端提交视频推理任务。 */
 async function startDetect(): Promise<void> {
   if (!videoPath.value) {
     errorMsg.value = '请先选择视频'
@@ -429,21 +437,16 @@ async function startDetect(): Promise<void> {
   errorMsg.value = ''
   try {
     for (const modelId of selectedModels.value) {
-      let model = models.value.find((item) => item.model_id === modelId)
+      const model = models.value.find((item) => item.model_id === modelId)
       if (!model) continue
       if (model.runtime_available === false) {
-        throw new Error('YOLO 推理组件尚未准备好。请重启软件并在首次启动初始化提示中重试安装。')
+        throw new Error('YOLO 推理组件尚未准备好。请在首次启动初始化提示中点击「重试初始化」并等待完成。')
       }
       if (model.weights_available === false) {
-        if (!model.downloadable) {
-          throw new Error(`模型「${model.name}」缺少权重文件，请先在模型管理中导入对应权重。`)
-        }
-        const downloaded = await downloadModel(modelId)
-        if (!downloaded) return
-        model = models.value.find((item) => item.model_id === modelId)
-        if (model?.weights_available === false) {
-          throw new Error(`模型「${model.name}」权重仍不可用，请到模型管理检查下载结果。`)
-        }
+        const action = model.downloadable
+          ? '请先点击模型旁的「下载 / 重试」按钮。'
+          : '请到「模型管理」点击「导入权重」选择本地文件。'
+        throw new Error(`模型「${model.name}」缺少权重，${action}`)
       }
     }
 
@@ -503,7 +506,7 @@ async function loadThumbs(): Promise<void> {
     }
     thumbs.value = map
   } catch {
-    /* thumbs optional */
+    /* 缩略图加载失败时仍保留时间轴和帧号。 */
   }
 }
 
@@ -697,12 +700,14 @@ function requestExportVideo(): void {
   void doExportVideo()
 }
 
+/** 从 Electron 文件桥接中解析拖入项的真实本地路径。 */
 function resolveDropPath(file: File): string {
   const api = window.yoloStudio
   if (api?.getPathForFile) return api.getPathForFile(file) || ''
   return (file as File & { path?: string }).path || ''
 }
 
+/** 只接受可解析的本地视频路径，并在无法识别时向用户展示原因。 */
 async function handleDrop(ev: DragEvent): Promise<void> {
   ev.preventDefault()
   ev.stopPropagation()
@@ -824,8 +829,9 @@ onUnmounted(() => {
 </script>
 
 <template>
+  <!-- 视频检测与复核工作区：预览、时间轴、逐帧结果和导出。 -->
   <div class="editor" :class="{ dragging }">
-    <!-- top command bar -->
+    <!-- 顶部命令栏 -->
     <header class="cmd-bar">
       <div class="cmd-left">
         <button type="button" class="primary" @click="pickVideo">{{ t('action.selectVideo') }}</button>
@@ -850,7 +856,7 @@ onUnmounted(() => {
       </div>
     </header>
 
-    <!-- main 3 columns -->
+    <!-- 主区域三列布局 -->
     <div class="work">
       <aside class="side left">
         <section class="panel">
@@ -960,7 +966,7 @@ onUnmounted(() => {
               :class="{ selected: selectedId === o.id }"
               @click="selectedId = o.id"
             >
-              <span class="swatch" :style="{ background: o.style?.color || '#2F6FED' }" />
+              <span class="swatch" :style="{ background: o.style?.color || DEFAULT_BOX_COLOR }" />
               <span>{{ o.id }}:{{ o.display_name || o.class_name }}</span>
               <button type="button" class="ghost mini" @click.stop="toggleVisible(o.id)">
                 {{ o.visible === false ? '显示' : '隐藏' }}
@@ -972,7 +978,7 @@ onUnmounted(() => {
       </aside>
     </div>
 
-    <!-- PR-style timeline -->
+    <!-- 剪辑软件式时间轴 -->
     <footer class="timeline-panel">
       <div class="tl-toolbar">
         <button type="button" class="ghost mini" :disabled="currentIndex <= 0" @click="stepFrame(-1)">◀</button>
@@ -1035,7 +1041,7 @@ onUnmounted(() => {
         <span>{{ timeline.length }}</span>
       </div>
 
-      <!-- PR-style single track bar -->
+      <!-- 剪辑软件式单轨道 -->
       <div
         v-if="timelineMode === 'track' && timeline.length"
         class="track-bar"
@@ -1063,7 +1069,7 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <!-- filmstrip mode -->
+      <!-- 胶片缩略图模式 -->
       <div
         v-if="timelineMode === 'filmstrip'"
         ref="filmstrip"

@@ -40,6 +40,7 @@ function apply(): void {
 </script>
 
 <template>
+  <!-- 图片检测的高级参数面板，集中编辑阈值和结果显示选项。 -->
   <div v-if="visible" class="mask" @click.self="emit('update:visible', false)">
     <div class="dialog">
       <h3 class="title">更多配置</h3>

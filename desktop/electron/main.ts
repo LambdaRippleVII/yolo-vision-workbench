@@ -1,7 +1,4 @@
-/**
- * Electron main process entry.
- * 产品名：YOLO Vision Workbench
- */
+/** Electron 主进程入口：准备运行环境、管理本地后端并创建应用窗口。 */
 import { app, BrowserWindow, dialog, ipcMain, Menu, shell, MenuItemConstructorOptions } from 'electron'
 import { appendFileSync, copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'fs'
 import { pathToFileURL } from 'url'
@@ -9,10 +6,20 @@ import { join, resolve, basename } from 'path'
 import { ProcessSupervisor } from './backend/supervisor'
 import { RuntimeSetup, type RuntimeSetupStatus } from './runtime-setup'
 
+// 窗口标题、系统菜单和应用元数据共用的产品名称。
 const PRODUCT_NAME = 'YOLO 视觉工作台'
 
+function appIconPath(): string {
+  return app.isPackaged
+    ? join(process.resourcesPath, 'app-icon.ico')
+    : resolve(app.getAppPath(), 'build', 'icon.ico')
+}
+
+// 本地后端绑定地址，默认仅监听回环接口。
 const HOST = process.env.YOLO_STUDIO_HOST || '127.0.0.1'
+// 本地 WebSocket 后端优先使用的端口。
 const PORT = Number(process.env.YOLO_STUDIO_PORT || 8765)
+// 开发调试开关：连接已有后端进程，而不由应用另行启动。
 const ATTACH = process.env.YOLO_STUDIO_ATTACH === '1'
 
 function logMain(message: string): void {
@@ -21,17 +28,17 @@ function logMain(message: string): void {
     mkdirSync(dir, { recursive: true })
     appendFileSync(join(dir, 'electron-main.log'), `${new Date().toISOString()} ${message}\n`)
   } catch {
-    /* ignore logging failures */
+    /* 日志写入失败不应阻断应用启动和后端管理。 */
   }
 }
 
 function repoRoot(): string {
-  // Packaged: use resources dir (contains backend/, models/)
+  // 打包运行时使用包含 backend 和 models 的 resources 目录。
   const res = process.resourcesPath
   if (res && existsSync(join(res, 'backend'))) {
     return res
   }
-  // Dev: desktop/ -> project root
+  // 开发运行时从 desktop 目录回到仓库根目录。
   const desktopDir = app.getAppPath()
   return resolve(desktopDir, '..')
 }
@@ -187,6 +194,7 @@ function buildAppMenu(): void {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template))
 }
 
+// 管理后端进程、端口选择、健康检查和异常重启的唯一协调器。
 const supervisor = new ProcessSupervisor({
   rootDir: repoRoot(),
   host: HOST,
@@ -196,7 +204,9 @@ const supervisor = new ProcessSupervisor({
   autoPort: true
 })
 
+// 当前应用实例负责的 Python 环境初始化器。
 let runtimeSetup: RuntimeSetup | null = null
+// 共享正在进行的后端启动请求，防止菜单重启与启动流程相互覆盖。
 let backendStartPromise: Promise<void> | null = null
 
 function currentRuntimeStatus(): RuntimeSetupStatus {
@@ -214,6 +224,7 @@ function currentRuntimeStatus(): RuntimeSetupStatus {
 
 function initializeRuntimeSetup(): void {
   const userDataDir = app.getPath('userData')
+  // 打包版使用随安装包提供的 Python；开发版沿用用户配置的解释器。
   runtimeSetup = new RuntimeSetup({
     managed: app.isPackaged,
     bundledRuntimeDir: join(process.resourcesPath || '', 'python-embed', 'runtime'),
@@ -231,10 +242,12 @@ function initializeRuntimeSetup(): void {
 }
 
 async function startBackendWithRuntime(restart = false): Promise<void> {
+  // 重复触发时复用同一个 Promise，确保初始化和服务启动只执行一份。
   if (backendStartPromise) return backendStartPromise
 
   backendStartPromise = (async () => {
     try {
+      // 按“准备用户数据 → 初始化 Python 依赖 → 启动服务 → 验证状态”的顺序完成启动。
       if (restart) await supervisor.stop()
       preparePackagedData()
       if (runtimeSetup) await runtimeSetup.initialize()
@@ -263,6 +276,7 @@ async function startBackendWithRuntime(restart = false): Promise<void> {
   return backendStartPromise
 }
 
+// 把后端日志转发到文件与渲染进程，供界面状态区展示诊断信息。
 supervisor.on('log', (entry: { level: string; source: string; message: string }) => {
   logMain(`[${entry.level}] ${entry.source}: ${entry.message}`)
   const win = BrowserWindow.getAllWindows()[0]
@@ -284,6 +298,7 @@ function createWindow(): void {
     maximizable: true,
     fullscreenable: true,
     title: PRODUCT_NAME,
+    icon: appIconPath(),
     show: true,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
@@ -322,7 +337,7 @@ ipcMain.handle('runtime:retry', async () => {
   try {
     await startBackendWithRuntime(true)
   } catch {
-    /* The current status includes the detailed error for the renderer. */
+    /* 当前状态对象已经包含详细错误，渲染进程会直接展示。 */
   }
   return currentRuntimeStatus()
 })
@@ -334,7 +349,7 @@ ipcMain.handle('dialog:selectModelFile', async () => {
     title: '选择模型文件',
     properties: ['openFile'],
     filters: [
-      { name: '模型', extensions: ['pt', 'onnx', 'engine', 'rknn'] }
+      { name: '模型', extensions: ['pt', 'onnx', 'engine', 'rknn', 'torchscript'] }
     ]
   })
   if (result.canceled || !result.filePaths.length) return null
@@ -346,6 +361,7 @@ ipcMain.handle('window:openCamera', () => {
     width: 960,
     height: 640,
     title: '摄像头预览',
+    icon: appIconPath(),
     autoHideMenuBar: true,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
@@ -449,7 +465,7 @@ ipcMain.handle('fs:readImageBase64', (_e, filePath: string) => {
   }
 })
 
-/** Save pasted/dropped clipboard image bytes to a temp file with a real absolute path. */
+/** 将粘贴或拖入的剪贴板图片字节保存为带真实绝对路径的临时文件。 */
 ipcMain.handle(
   'fs:writeTempImage',
   (_e, payload: { name?: string; base64?: string; dataUrl?: string }) => {
@@ -473,6 +489,7 @@ ipcMain.handle(
   }
 )
 
+// Electron 就绪后先建立状态转发和窗口，再后台执行依赖初始化与服务启动。
 app.whenReady().then(async () => {
   app.setName(PRODUCT_NAME)
   buildAppMenu()

@@ -1,4 +1,4 @@
-"""Profile WebSocket handlers."""
+"""创建、读取、更新和删除推理配置方案。"""
 
 from __future__ import annotations
 
@@ -12,6 +12,12 @@ from app.websocket.server import ConnectionContext, WebSocketHub
 
 
 def register_profile_handlers(hub: WebSocketHub) -> None:
+    """注册推理配置方案管理消息处理器。
+
+    Args:
+        hub: 管理 WebSocket 连接及处理器的服务实例。
+    """
+
     async def on_list(msg: dict[str, Any], ctx: ConnectionContext) -> dict[str, Any]:
         try:
             profiles = profile_store.list_profiles()

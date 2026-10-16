@@ -1,4 +1,4 @@
-"""WebSocket handlers package."""
+"""实现后端应用的辅助功能。"""
 
 from app.websocket.handlers.camera import register_camera_handlers
 from app.websocket.handlers.detect import register_detect_handlers
@@ -13,6 +13,7 @@ from app.websocket.handlers.system import register_system_handlers
 from app.websocket.handlers.task import register_task_handlers
 from app.websocket.handlers.video import register_video_handlers
 
+# 显式声明此模块向其他模块公开的接口名称。
 __all__ = [
     "register_system_handlers",
     "register_model_handlers",

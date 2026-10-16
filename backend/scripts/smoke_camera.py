@@ -1,4 +1,4 @@
-"""Smoke camera/stream using a local video file as source (cv2 can open path)."""
+"""用于手工检查 camera 相关流程的辅助脚本。"""
 
 from __future__ import annotations
 
@@ -8,11 +8,19 @@ from pathlib import Path
 
 import websockets
 
+# 后端仓库目录的绝对路径。
 ROOT = Path(__file__).resolve().parents[2]
+# 烟雾检查使用的媒体样例文件路径。
 SAMPLE = ROOT / "logs" / "smoke_video.mp4"
 
 
 async def main() -> None:
+    """运行 camera 相关的烟雾检查流程。
+
+    Raises:
+        SystemExit: 将摄像头烟雾检查失败状态传递给命令行。
+    """
+
     assert SAMPLE.exists()
     async with websockets.connect("ws://127.0.0.1:8765/ws", max_size=20_000_000) as ws:
         await ws.recv()

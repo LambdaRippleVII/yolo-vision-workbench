@@ -2,6 +2,7 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import EmptyState from '../components/EmptyState.vue'
 import { wsClient } from '../api/ws'
+import { DEFAULT_BOX_COLOR } from '../components/labelTypes'
 import { formatError } from '../utils/errors'
 import { t } from '../locales'
 
@@ -42,6 +43,7 @@ const saving = ref(false)
 const filterText = ref('')
 const infoMsg = ref('')
 const downloadingModelId = ref('')
+const importingWeightsModelId = ref('')
 let stopDownloadProgress: (() => void) | undefined
 let stopClientOpen: (() => void) | undefined
 
@@ -62,6 +64,7 @@ const visibleClasses = computed(() => {
   )
 })
 
+/** 重新读取本地和仓库模型，并同步当前选择的类别编辑草稿。 */
 async function loadList(): Promise<void> {
   loading.value = true
   errorMsg.value = ''
@@ -86,7 +89,7 @@ function resetDraft(): void {
   const colors: Record<string, string> = {}
   for (const c of selected.value?.class_list || []) {
     map[c.class_name] = c.display_name || c.class_name
-    colors[c.class_name] = c.color || '#2F6FED'
+    colors[c.class_name] = c.color || DEFAULT_BOX_COLOR
   }
   displayDraft.value = map
   colorDraft.value = colors
@@ -112,8 +115,9 @@ async function saveDisplay(): Promise<void> {
   }
 }
 
+/** 下载用户选中的内置权重，显示进度/结果并通知其他页面刷新模型状态。 */
 async function downloadBuiltin(modelId: string): Promise<void> {
-  if (downloadingModelId.value) return
+  if (downloadingModelId.value || importingWeightsModelId.value) return
   const model = models.value.find((m) => m.model_id === modelId)
   if (!model) return
   downloadingModelId.value = modelId
@@ -129,6 +133,7 @@ async function downloadBuiltin(modelId: string): Promise<void> {
       infoMsg.value = ''
     } else {
       infoMsg.value = `${model.name} 权重已下载，可以开始推理。`
+      window.dispatchEvent(new Event('yolo-models-changed'))
     }
   } catch (e) {
     errorMsg.value = formatError(e)
@@ -138,6 +143,38 @@ async function downloadBuiltin(modelId: string): Promise<void> {
   }
 }
 
+/** 为已有模型选择本地权重文件，并交由后端校验、复制和关联。 */
+async function attachWeights(modelId: string): Promise<void> {
+  if (downloadingModelId.value || importingWeightsModelId.value) return
+  const model = models.value.find((item) => item.model_id === modelId)
+  if (!model) return
+
+  const api = window.yoloStudio
+  if (!api?.selectModelFile) {
+    errorMsg.value = '请在桌面端中选择权重文件。'
+    return
+  }
+
+  errorMsg.value = ''
+  infoMsg.value = ''
+  try {
+    const path = await api.selectModelFile()
+    if (!path) return
+    importingWeightsModelId.value = modelId
+    infoMsg.value = `正在为「${model.name}」导入权重…`
+    await wsClient.request('model.attachWeights', { model_id: modelId, weight_path: path })
+    await loadList()
+    infoMsg.value = `已为「${model.name}」导入并关联权重，可以开始推理。`
+    window.dispatchEvent(new Event('yolo-models-changed'))
+  } catch (e) {
+    errorMsg.value = formatError(e)
+    infoMsg.value = ''
+  } finally {
+    importingWeightsModelId.value = ''
+  }
+}
+
+/** 从本地权重创建新的模型条目，随后刷新列表并选中新模型。 */
 async function importModel(): Promise<void> {
   const api = window.yoloStudio
   if (!api?.selectModelFile) {
@@ -182,6 +219,7 @@ onUnmounted(() => {
 </script>
 
 <template>
+  <!-- 模型管理页面：浏览模型、下载内置权重、导入权重并编辑类别信息。 -->
   <div class="page models-page">
     <div class="page-header">
       <h1 class="page-title">{{ t('models.title') }}</h1>
@@ -203,9 +241,9 @@ onUnmounted(() => {
 
     <p v-if="errorMsg" class="err-text">{{ errorMsg }}</p>
     <p v-if="infoMsg" class="info-text">{{ infoMsg }}</p>
-    <p class="hint-text">发行版首次启动时会自动下载内置模型权重；失败的模型可在这里单独重试。下载后保存在本机，可离线使用。</p>
+    <p class="hint-text">首次启动会自动安装 Python 推理依赖。模型权重不会自动下载：有官方下载源的模型可下载或重试；其他模型可选择本地权重导入。</p>
     <p v-if="yoloRuntimeMissing" class="runtime-warning">
-      YOLO 推理组件尚未准备好。请重启软件并在首次启动初始化提示中重试安装；如果仍失败，可查看初始化日志。
+      YOLO 推理组件尚未准备好。请在首次启动初始化提示中点击「重试初始化」；如果仍失败，可查看初始化日志。
     </p>
 
     <div class="grid">
@@ -241,17 +279,27 @@ onUnmounted(() => {
                     missing: m.weights_available === false || m.runtime_available === false
                   }"
                 >
-                  {{ m.runtime_available === false ? '推理组件缺失' : m.weights_available === false ? (m.downloadable ? '未下载' : '缺少权重') : '已就绪' }}
+                  {{ m.runtime_available === false ? '推理组件缺失' : m.weights_available === false ? (m.downloadable ? '未下载' : t('models.manualImportWeights')) : '已就绪' }}
                 </span>
-                <button
-                  v-if="m.downloadable && m.weights_available === false"
-                  type="button"
-                  class="ghost mini"
-                  :disabled="Boolean(downloadingModelId) || m.runtime_available === false"
-                  @click.stop="downloadBuiltin(m.model_id)"
-                >
-                  {{ downloadingModelId === m.model_id ? '下载中…' : '下载' }}
-                </button>
+                <div v-if="m.weights_available === false" class="weight-actions">
+                  <button
+                    v-if="m.downloadable"
+                    type="button"
+                    class="ghost mini"
+                    :disabled="Boolean(downloadingModelId) || Boolean(importingWeightsModelId)"
+                    @click.stop="downloadBuiltin(m.model_id)"
+                  >
+                    {{ downloadingModelId === m.model_id ? '下载中…' : '下载 / 重试' }}
+                  </button>
+                  <button
+                    type="button"
+                    class="ghost mini"
+                    :disabled="Boolean(downloadingModelId) || Boolean(importingWeightsModelId)"
+                    @click.stop="attachWeights(m.model_id)"
+                  >
+                    {{ importingWeightsModelId === m.model_id ? '导入中…' : '导入权重' }}
+                  </button>
+                </div>
               </td>
             </tr>
           </tbody>
@@ -287,7 +335,7 @@ onUnmounted(() => {
             </p>
             <div class="map-list">
               <div v-for="c in visibleClasses" :key="c.class_name" class="map-row">
-                <span class="swatch" :style="{ background: colorDraft[c.class_name] || c.color || '#2F6FED' }" />
+                <span class="swatch" :style="{ background: colorDraft[c.class_name] || c.color || DEFAULT_BOX_COLOR }" />
                 <input
                   v-if="colorMode === 'manual'"
                   v-model="colorDraft[c.class_name]"
@@ -341,7 +389,13 @@ onUnmounted(() => {
   font-size: var(--text-sm);
 }
 .weights-cell {
-  white-space: nowrap;
+  white-space: normal;
+}
+.weight-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
 }
 .badge.missing {
   color: var(--warning, #a76500);

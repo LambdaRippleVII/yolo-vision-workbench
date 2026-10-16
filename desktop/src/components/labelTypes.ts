@@ -1,10 +1,13 @@
 export type LabelPos = 'top' | 'bottom' | 'left' | 'right'
 export type TextRotate = 0 | 90 | 180 | 270
 
+// 检测框、默认标签和缺省类别色共用的琥珀色。
+export const DEFAULT_BOX_COLOR = '#E8890C'
+
 export interface LabelItemStyle {
   color: string
   bg: string
-  /** false = transparent / no background fill */
+  /** false 表示透明，不绘制标签背景。 */
   bgEnabled: boolean
   fontSize: number
   bold: boolean
@@ -32,7 +35,7 @@ export interface LabelSettings {
 }
 
 export function defaultLabelStyle(): LabelItemStyle {
-  return { color: '#ffffff', bg: '#2F6FED', bgEnabled: true, fontSize: 12, bold: true, rotate: 0 }
+  return { color: '#2A1A02', bg: DEFAULT_BOX_COLOR, bgEnabled: true, fontSize: 12, bold: true, rotate: 0 }
 }
 
 export function defaultLabelSettings(): LabelSettings {
@@ -48,7 +51,7 @@ export function defaultLabelSettings(): LabelSettings {
         style: defaultLabelStyle()
       }
     ],
-    box: { color: '#2F6FED', lineWidth: 2 }
+    box: { color: DEFAULT_BOX_COLOR, lineWidth: 2 }
   }
 }
 

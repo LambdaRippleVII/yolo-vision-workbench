@@ -1,6 +1,4 @@
-/**
- * Preload: expose a minimal, typed bridge to the renderer.
- */
+/** 通过受限且有类型的 IPC 接口向渲染进程暴露桌面能力。 */
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 
 export interface BackendStatus {
@@ -27,6 +25,7 @@ export interface RuntimeSetupStatus {
   details: string[]
 }
 
+// 仅公开界面实际需要的 IPC 方法，避免把 Electron 原始对象暴露给页面。
 const api = {
   getBackendStatus: (): Promise<BackendStatus> => ipcRenderer.invoke('backend:getStatus'),
   getWsUrl: (): Promise<string> => ipcRenderer.invoke('backend:getWsUrl'),
@@ -68,7 +67,7 @@ const api = {
     ipcRenderer.invoke('fs:readImageBase64', filePath),
   writeTempImage: (payload: { name?: string; base64?: string; dataUrl?: string }): Promise<string | null> =>
     ipcRenderer.invoke('fs:writeTempImage', payload),
-  /** Resolve absolute path for a dropped File (works for files and folders). */
+  /** 解析拖入文件或文件夹的绝对路径。 */
   getPathForFile: (file: File): string => {
     try {
       return webUtils.getPathForFile(file) || ''

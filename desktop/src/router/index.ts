@@ -10,17 +10,21 @@ import TasksView from '../views/TasksView.vue'
 import DevicesView from '../views/DevicesView.vue'
 import SettingsView from '../views/SettingsView.vue'
 
-export function withViewTransition(fn: () => void): void {
-  const g = globalThis as unknown as {
-    startViewTransition?: (cb: () => void) => void
+/** 在浏览器支持时用原生视图过渡执行路由切换回调。 */
+export function withViewTransition(fn: () => void | Promise<unknown>): void {
+  const doc = document as unknown as {
+    startViewTransition?: (cb: () => void | Promise<void>) => unknown
   }
-  if (typeof g.startViewTransition === 'function') {
-    g.startViewTransition(fn)
+  if (typeof doc.startViewTransition === 'function') {
+    void doc.startViewTransition(async () => {
+      await fn()
+    })
   } else {
-    fn()
+    void fn()
   }
 }
 
+// 应用主路由表；图片检测和模型管理页保留实例以维持工作区状态。
 export const router = createRouter({
   history: createWebHashHistory(),
   routes: [

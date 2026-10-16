@@ -1,4 +1,4 @@
-"""Smoke: class_filter + export.frames + camera.record."""
+"""用于手工检查 product 相关流程的辅助脚本。"""
 
 from __future__ import annotations
 
@@ -8,16 +8,21 @@ from pathlib import Path
 
 import websockets
 
+# 后端仓库目录的绝对路径。
 ROOT = Path(__file__).resolve().parents[2]
+# 烟雾检查使用的媒体样例文件路径。
 SAMPLE = ROOT / "logs" / "smoke_video.mp4"
+# 产品流程烟雾检查的结果保存目录。
 OUTDIR = ROOT / "logs" / "frame_export"
 
 
 async def main() -> None:
+    """运行 product 相关的烟雾检查流程。"""
+
     assert SAMPLE.exists()
     async with websockets.connect("ws://127.0.0.1:8765/ws", max_size=20_000_000) as ws:
         await ws.recv()
-        # class filter: only person
+    # 类别筛选：只保留 person。
         await ws.send(
             json.dumps(
                 {
@@ -76,7 +81,7 @@ async def main() -> None:
                 assert m["data"]["count"] >= 1
                 break
 
-        # camera record
+    # 验证摄像头录制流程。
         await ws.send(
             json.dumps(
                 {

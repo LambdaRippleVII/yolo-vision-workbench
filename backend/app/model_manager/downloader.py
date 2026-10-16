@@ -1,4 +1,4 @@
-"""Download builtin Ultralytics weights into the application's writable model store."""
+"""按需下载内置模型权重并校验下载结果。"""
 
 from __future__ import annotations
 
@@ -13,7 +13,8 @@ from urllib.request import Request, urlopen
 
 from loguru import logger
 
-# model_id -> Ultralytics release asset name
+# 内置模型标识到 Ultralytics 官方权重文件名的映射。
+# 用于识别内置权重来源和模型资产名称的仓库标识。
 HUB_NAME: dict[str, str] = {
     "coco_yolo11n": "yolo11n.pt",
     "coco_yolo26n": "yolo26n.pt",
@@ -21,12 +22,21 @@ HUB_NAME: dict[str, str] = {
     "objects365_yolo26n": "yolo26n-objv1-150.pt",
 }
 
+# 内置模型权重下载所使用的 Ultralytics 资产版本标签。
 _ASSET_RELEASE_TAG = "v8.4.0"
+# 内置权重资产所在的下载地址前缀。
 _ASSET_BASE_URL = f"https://github.com/ultralytics/assets/releases/download/{_ASSET_RELEASE_TAG}"
+# 判定下载权重文件有效时要求达到的最小字节数。
 MIN_WEIGHT_BYTES = 1000
 
 
 def _download_ssl_context() -> ssl.SSLContext:
+    """构造兼容系统证书的 HTTPS 下载上下文。
+
+    Returns:
+        已配置系统证书和 certifi 根证书的 SSL 上下文。
+    """
+
     context = ssl.create_default_context()
     try:
         import certifi
@@ -37,7 +47,14 @@ def _download_ssl_context() -> ssl.SSLContext:
 
 
 def weight_file_available(path: Path) -> bool:
-    """Treat empty and obviously partial files as missing weights."""
+    """检查权重文件是否存在且通过最小文件大小校验。
+
+    Args:
+        path: 待读取、写入或检查的文件系统路径。
+
+    Returns:
+        文件存在且大小超过最小阈值时返回 True。
+    """
     try:
         return path.is_file() and path.stat().st_size > MIN_WEIGHT_BYTES
     except OSError:
@@ -45,7 +62,19 @@ def weight_file_available(path: Path) -> bool:
 
 
 def _download_asset(url: str, dest: Path, progress: Callable[[str], None] | None) -> None:
+    """下载单个网络资源到临时文件并汇报进度。
+
+    Args:
+        url: 远程模型资源地址。
+        dest: 保存模型资源的目标文件路径。
+        progress: 接收人类可读下载进度文本的回调函数。
+
+    Raises:
+        RuntimeError: 服务器返回错误页面、文件不完整或文件过小时抛出。
+    """
+
     request = Request(url, headers={"User-Agent": "YOLO-Vision-Workbench"})
+    # 先写入同目录临时文件，完整性校验通过后再替换正式权重。
     temp = dest.with_name(f".{dest.name}.{uuid.uuid4().hex}.part")
     downloaded = 0
     last_progress = -1
@@ -74,12 +103,15 @@ def _download_asset(url: str, dest: Path, progress: Callable[[str], None] | None
                     else:
                         progress(f"正在下载 {dest.name}：{downloaded / (1024 * 1024):.1f} MB")
 
+        # 对照服务端声明长度和最小文件大小，拦截中断响应或错误页面。
         if total and downloaded != total:
             raise RuntimeError(f"文件下载不完整：预期 {total} 字节，收到 {downloaded} 字节")
         if downloaded <= MIN_WEIGHT_BYTES:
             raise RuntimeError(f"下载结果异常（{downloaded} 字节），未保存模型文件")
+        # 原子替换可避免模型加载到只写入了一部分的权重文件。
         os.replace(temp, dest)
     finally:
+        # 下载失败时清除临时文件，确保用户可以安全重试。
         temp.unlink(missing_ok=True)
 
 
@@ -89,7 +121,20 @@ def download_weight(
     *,
     progress: Callable[[str], None] | None = None,
 ) -> Path:
-    """Download a known builtin checkpoint atomically; no torch import is needed."""
+    """按内置模型标识下载权重并在校验后原子替换目标文件。
+
+    Args:
+        model_id: 目标模型的唯一标识。
+        dest: 保存目标模型权重的文件路径。
+        progress: 用于报告下载进度的回调函数。
+
+    Returns:
+        下载并校验通过的目标权重路径。
+
+    Raises:
+        ValueError: model_id 没有可用的内置资源映射时抛出。
+        RuntimeError: 网络请求失败或下载文件校验失败时抛出。
+    """
     if weight_file_available(dest):
         return dest
     if model_id not in HUB_NAME:
@@ -106,7 +151,7 @@ def download_weight(
         logger.warning("download {} failed: {}", asset_name, exc)
         raise RuntimeError(
             f"模型「{model_id}」权重下载失败：{exc}。请检查网络/代理后重试，"
-            "或通过「添加模型」导入本地权重。"
+            "或在「模型管理」中点击「导入权重」选择本地文件。"
         ) from exc
 
     logger.info("downloaded builtin model {} -> {}", model_id, dest)
@@ -116,6 +161,16 @@ def download_weight(
 
 
 def ensure_builtin(weights_dir: Path, model_ids: list[str]) -> dict[str, Any]:
+    """逐项检查并按需下载所请求的内置权重文件。
+
+    Args:
+        weights_dir: 保存内置权重的目录。
+        model_ids: 本次操作涉及的模型标识列表。
+
+    Returns:
+        按模型标识记录成功路径或失败原因的结果字典。
+    """
+
     results: dict[str, Any] = {}
     for model_id in model_ids:
         dest = weights_dir / _default_filename(model_id)
@@ -128,6 +183,15 @@ def ensure_builtin(weights_dir: Path, model_ids: list[str]) -> dict[str, Any]:
 
 
 def _default_filename(model_id: str) -> str:
+    """根据模型标识生成预期的权重文件名。
+
+    Args:
+        model_id: 目标模型的唯一标识。
+
+    Returns:
+        根据模型标识生成的默认权重文件名。
+    """
+
     mapping = {
         "coco_yolo11n": "yolo11n.pt",
         "coco_yolo26n": "yolo26n.pt",

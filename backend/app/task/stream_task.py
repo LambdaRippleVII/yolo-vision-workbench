@@ -1,4 +1,4 @@
-"""Live camera / RTSP stream task (preview + optional detect)."""
+"""管理摄像头或网络视频流的采集、推理和录制。"""
 
 from __future__ import annotations
 
@@ -16,6 +16,8 @@ from app.utils.image_io import open_video_capture, video_open_error_message
 
 
 class StreamSession:
+    """维护一个实时视频源及其推理和录制状态。"""
+
     def __init__(
         self,
         *,
@@ -29,6 +31,20 @@ class StreamSession:
         record_path: str | None = None,
         record_fps: float | None = None,
     ) -> None:
+        """保存视频源、模型、回调和录制参数。
+
+        Args:
+            stream_id: 实时视频流会话的唯一标识。
+            source: 模型或数据的来源标识。
+            model_ids: 本次操作涉及的模型标识列表。
+            skip_frame: 两次检测之间跳过的帧数。
+            box_persistence: 检测框在后续帧中继续显示的帧数。
+            emit: 接收实时帧、状态和错误事件的回调函数。
+            model_manager: 负责查询和加载模型的管理器。
+            record_path: 录制视频的输出路径。
+            record_fps: 录制视频使用的帧率。
+        """
+
         self.stream_id = stream_id
         self.source = source
         self.model_ids = model_ids
@@ -50,10 +66,20 @@ class StreamSession:
         self.record_task_id: str | None = None
 
     def start(self) -> None:
+        """启动视频流采集和实时推理线程。"""
+
         self._thread = threading.Thread(target=self._run, name=f"stream-{self.stream_id}", daemon=True)
         self._thread.start()
 
     def start_recording(self, path: str, *, fps: float | None = None, task_id: str | None = None) -> None:
+        """创建录制任务并开始把当前视频流写入文件。
+
+        Args:
+            path: 待读取、写入或检查的文件系统路径。
+            fps: 输出视频的帧率。
+            task_id: 任务的唯一标识。
+        """
+
         self.record_path = path
         self.record_fps = fps if fps and fps > 0 else self.record_fps
         self.record_task_id = task_id
@@ -61,6 +87,12 @@ class StreamSession:
         self.record_frames = 0
 
     def stop_recording(self) -> dict[str, Any]:
+        """结束当前录制并收尾任务结果和资源。
+
+        Returns:
+            录制结束后的任务状态、输出路径和统计信息。
+        """
+
         self._recording = False
         if self._writer is not None:
             try:
@@ -76,11 +108,20 @@ class StreamSession:
         }
 
     def set_model_ids(self, model_ids: list[str]) -> list[str]:
-        """Hot-swap detection models while stream is running (empty = preview only)."""
+        """更新当前流会话使用的模型标识列表。
+
+        Args:
+            model_ids: 本次操作涉及的模型标识列表。
+
+        Returns:
+            当前流会话实际使用的模型标识列表。
+        """
         self.model_ids = list(model_ids or [])
         return list(self.model_ids)
 
     def stop(self) -> None:
+        """停止采集线程、关闭视频资源并结束录制。"""
+
         self._stop.set()
         if self._thread:
             self._thread.join(timeout=3)
@@ -92,6 +133,12 @@ class StreamSession:
             self._cap = None
 
     def _run(self) -> None:
+        """在后台线程中循环读取视频帧并执行实时推理。
+
+        Raises:
+            RuntimeError: 录制设备或输出文件无法打开时抛出。
+        """
+
         import cv2
 
 
@@ -124,7 +171,7 @@ class StreamSession:
             while not self._stop.is_set():
                 ok, frame = self._cap.read()
                 if not ok:
-                    # RTSP may drop; brief wait and continue
+        # RTSP 可能短暂丢帧，短暂等待后继续读取。
                     time.sleep(0.05)
                     continue
 
@@ -176,7 +223,7 @@ class StreamSession:
                     if self._writer is not None:
                         self._writer.write(frame)
                         self.record_frames += 1
-                        # persist results so editor can open without re-detect
+        # 持久化结果，使编辑器打开任务时无需重新检测。
                         if self.record_task_id:
                             try:
                                 from app.database import dao as db_dao
@@ -213,7 +260,7 @@ class StreamSession:
                     }
                 )
 
-                # light throttle ~15 fps emit
+        # 轻量限速，事件推送约保持 15 FPS。
                 time.sleep(0.066)
 
         except Exception as exc:  # noqa: BLE001

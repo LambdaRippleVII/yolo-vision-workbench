@@ -1,4 +1,4 @@
-"""Detect WebSocket handlers: image / folder inference."""
+"""处理单图和文件夹检测任务请求。"""
 
 from __future__ import annotations
 
@@ -11,6 +11,13 @@ from app.websocket.server import ConnectionContext, WebSocketHub
 
 
 def register_detect_handlers(hub: WebSocketHub, task_manager) -> None:
+    """注册单图和文件夹推理消息处理器。
+
+    Args:
+        hub: 管理 WebSocket 连接及处理器的服务实例。
+        task_manager: 负责创建和调度任务的管理器。
+    """
+
     async def on_image(msg: dict[str, Any], ctx: ConnectionContext) -> dict[str, Any]:
         data = msg.get("data") or {}
         media_path = data.get("media_path")
@@ -21,7 +28,7 @@ def register_detect_handlers(hub: WebSocketHub, task_manager) -> None:
         if not model_ids:
             return make_error("detect.image", "BAD_REQUEST", "model_ids is required", id_=msg.get("id"))
 
-        # resolve b64 paste to a temp file so Task can treat uniformly
+        # 将 Base64 粘贴内容落到临时文件，让任务统一按文件路径处理。
         if image_b64 and not media_path:
             import base64
             import tempfile
@@ -36,7 +43,7 @@ def register_detect_handlers(hub: WebSocketHub, task_manager) -> None:
 
         from pathlib import Path as P2
 
-        # folder path sent to detect.image → run folder task instead
+        # 单图接口收到目录路径时改走目录任务，避免把目录当作图片读取。
         if media_path and P2(str(media_path)).is_dir():
             folder_task = task_manager.create_folder_task(
                 str(media_path),

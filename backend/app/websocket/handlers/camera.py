@@ -1,4 +1,4 @@
-"""Camera / RTSP WebSocket handlers."""
+"""处理摄像头连接、实时推理和录制控制消息。"""
 
 from __future__ import annotations
 
@@ -16,6 +16,14 @@ from app.websocket.server import ConnectionContext, WebSocketHub
 
 
 def register_camera_handlers(hub: WebSocketHub, model_manager, task_manager: TaskManager) -> None:
+    """注册摄像头连接、模型选择和录制相关消息处理器。
+
+    Args:
+        hub: 管理 WebSocket 连接及处理器的服务实例。
+        model_manager: 负责查询和加载模型的管理器。
+        task_manager: 负责创建和调度任务的管理器。
+    """
+
     sessions: dict[str, StreamSession] = {}
 
     def emit_to_loop(message: dict[str, Any]) -> None:
@@ -109,7 +117,7 @@ def register_camera_handlers(hub: WebSocketHub, model_manager, task_manager: Tas
                 fps_val = float(fps) if fps is not None else None
             except (TypeError, ValueError):
                 fps_val = None
-            # create a task so results can be edited later without re-detect
+        # 创建任务以持久化结果，后续可直接编辑而无需重新检测。
             task = task_manager.create_video_task(
                 path,
                 list(session.model_ids),
@@ -144,7 +152,7 @@ def register_camera_handlers(hub: WebSocketHub, model_manager, task_manager: Tas
                     if t:
                         t.result_ref = out.get("output_path")
                         t.progress = 1.0
-                        # record task may still be PENDING if never started
+        # 如果录制尚未真正开始，任务可能仍处于 PENDING 状态。
                         if t.status == TaskStatus.PENDING:
                             t.transition(TaskStatus.RUNNING)
                         if t.status == TaskStatus.RUNNING:
@@ -171,7 +179,7 @@ def register_camera_handlers(hub: WebSocketHub, model_manager, task_manager: Tas
         if not session:
             return make_error("camera.setModels", "NOT_FOUND", f"stream not found: {stream_id}", id_=msg.get("id"))
         model_ids = [str(m) for m in (data.get("model_ids") or [])]
-        # ensure runtimes exist for new models
+        # 为新选择的模型确认推理运行时已经准备好。
         for mid in model_ids:
             if mid not in model_manager._loaded:
                 try:

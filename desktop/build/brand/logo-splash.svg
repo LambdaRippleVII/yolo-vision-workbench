@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 128 128">
+  <title>YOLO Vision Workbench — 启动动画</title>
+  <style>
+    .br {
+      stroke-dasharray: 78;
+      stroke-dashoffset: 78;
+      animation: draw 0.55s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+    }
+    .br-2 { animation-delay: 0.16s; }
+    .y {
+      opacity: 0;
+      transform-origin: 64px 64px;
+      transform: scale(0.92);
+      animation: settle 0.5s cubic-bezier(0.22, 1, 0.36, 1) 0.42s forwards;
+    }
+    @keyframes draw { to { stroke-dashoffset: 0; } }
+    @keyframes settle { to { opacity: 1; transform: scale(1); } }
+    @media (prefers-reduced-motion: reduce) {
+      .br, .y { animation: none; stroke-dashoffset: 0; opacity: 1; transform: none; }
+    }
+  </style>
+
+  <g stroke="#A7B8CC" stroke-width="10" stroke-linecap="round" fill="none">
+    <path class="br" d="M24 58 V 40 Q 24 24 40 24 H 58"/>
+    <path class="br br-2" d="M104 70 V 88 Q 104 104 88 104 H 70"/>
+  </g>
+
+  <g class="y" stroke="#FFC247" stroke-width="12" stroke-linecap="round" stroke-linejoin="round" fill="none">
+    <path d="M45 40 L64 61 L83 40"/>
+    <path d="M64 61 L64 88"/>
+  </g>
+</svg>

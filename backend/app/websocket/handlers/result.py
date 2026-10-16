@@ -1,4 +1,4 @@
-"""Result query WebSocket handlers: timeline / frame objects / frame preview."""
+"""处理任务帧、对象和预览结果查询请求。"""
 
 from __future__ import annotations
 
@@ -13,6 +13,12 @@ from app.websocket.server import ConnectionContext, WebSocketHub
 
 
 def register_result_handlers(hub: WebSocketHub) -> None:
+    """注册任务结果和帧对象查询消息处理器。
+
+    Args:
+        hub: 管理 WebSocket 连接及处理器的服务实例。
+    """
+
     async def on_frames(msg: dict[str, Any], ctx: ConnectionContext) -> dict[str, Any]:
         task_id = (msg.get("data") or {}).get("task_id")
         if not task_id:

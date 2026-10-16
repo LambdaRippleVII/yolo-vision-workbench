@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
+import BrandMark from './BrandMark.vue'
 
 interface RuntimeSetupView {
   managed: boolean
@@ -10,30 +11,13 @@ interface RuntimeSetupView {
   details: string[]
 }
 
-interface ModelSetupView {
-  visible: boolean
-  phase: 'idle' | 'checking' | 'downloading' | 'failed' | 'complete'
-  message: string
-  currentModelId: string
-  models: Array<{
-    model_id: string
-    name: string
-    state: 'waiting' | 'downloading' | 'failed' | 'ready'
-    error?: string
-  }>
-}
-
 const props = defineProps<{
   runtime: RuntimeSetupView
-  models: ModelSetupView
   retrying: boolean
 }>()
 
 const emit = defineEmits<{
   retryRuntime: []
-  retryModels: []
-  retryModel: [modelId: string]
-  continue: []
 }>()
 
 const panel = ref<HTMLElement | null>(null)
@@ -41,15 +25,11 @@ let focusBeforeSetup: HTMLElement | null = null
 const runtimeVisible = computed(
   () => props.runtime.managed && props.runtime.phase !== 'ready'
 )
-const visible = computed(() => runtimeVisible.value || props.models.visible)
+const visible = computed(() => runtimeVisible.value)
 const isRuntimeFailure = computed(() => runtimeVisible.value && props.runtime.phase === 'failed')
-const isWorking = computed(
-  () =>
-    (runtimeVisible.value && props.runtime.phase === 'initializing') ||
-    props.models.phase === 'checking' ||
-    props.models.phase === 'downloading'
-)
+const isWorking = computed(() => runtimeVisible.value && props.runtime.phase === 'initializing')
 
+// 弹层打开时将焦点移入对话框，关闭时把焦点还给此前的控件。
 watch(visible, async (shown, wasShown) => {
   if (shown) {
     if (!wasShown) {
@@ -64,6 +44,7 @@ watch(visible, async (shown, wasShown) => {
   }
 }, { immediate: true })
 
+/** 将 Tab 键焦点限制在初始化对话框内，满足模态窗口的键盘操作习惯。 */
 function trapFocus(event: KeyboardEvent): void {
   if (event.key !== 'Tab' || !panel.value) return
   const items = [...panel.value.querySelectorAll<HTMLElement>('button:not(:disabled), summary')]
@@ -88,6 +69,7 @@ function trapFocus(event: KeyboardEvent): void {
 </script>
 
 <template>
+  <!-- 首次启动环境初始化反馈层，展示进度、日志、错误和重试入口。 -->
   <Transition name="setup-fade">
     <div v-if="visible" class="setup-backdrop" :class="{ 'setup-backdrop-error': isRuntimeFailure }">
       <section
@@ -101,18 +83,17 @@ function trapFocus(event: KeyboardEvent): void {
         @keydown="trapFocus"
       >
         <div class="setup-heading">
-          <span class="setup-mark" :class="{ failed: isRuntimeFailure }" aria-hidden="true">
-            {{ isRuntimeFailure || models.phase === 'failed' ? '!' : 'Y' }}
+          <span class="setup-brand-wrap">
+            <BrandMark :size="42" variant="tile" :animate="runtimeVisible && runtime.phase === 'initializing'" />
+            <span
+              v-if="isRuntimeFailure"
+              class="setup-mark-error"
+              aria-hidden="true"
+            >!</span>
           </span>
           <div>
-            <h1 id="startup-setup-title">{{ runtimeVisible ? '首次启动初始化' : '准备内置模型' }}</h1>
-            <p class="setup-subtitle">
-              {{
-                runtimeVisible
-                  ? '软件正在准备本机运行环境，完成后即可开始使用。'
-                  : '正在下载可用模型权重；此步骤只下载文件，不会自动开始推理。'
-              }}
-            </p>
+            <h1 id="startup-setup-title">首次启动初始化</h1>
+            <p class="setup-subtitle">软件正在准备本机运行环境，完成后即可开始使用。</p>
           </div>
         </div>
 
@@ -130,7 +111,7 @@ function trapFocus(event: KeyboardEvent): void {
           </div>
 
           <p class="setup-note">
-            首次准备需要联网下载服务依赖、CPU 版 PyTorch 和 YOLO 组件。请保持软件开启；安装文件保存在当前用户目录。
+            首次准备会安装服务依赖、CPU 版 PyTorch 和 YOLO 组件。请保持软件开启；模型权重不会自动下载，可在「模型管理」中按需下载或导入。
           </p>
 
           <div v-if="runtime.phase === 'failed'" class="setup-error" role="alert">
@@ -153,50 +134,6 @@ function trapFocus(event: KeyboardEvent): void {
           </button>
         </template>
 
-        <template v-else>
-          <p class="setup-model-message">{{ models.message }}</p>
-          <div v-if="models.phase === 'checking' || models.phase === 'downloading'" class="setup-progress" aria-hidden="true">
-            <span />
-          </div>
-          <ul v-if="models.models.length" class="setup-model-list">
-            <li v-for="model in models.models" :key="model.model_id">
-              <div class="setup-model-copy">
-                <strong>{{ model.name }}</strong>
-                <span v-if="model.state === 'downloading'">{{ models.message }}</span>
-                <span v-else-if="model.state === 'failed'" class="setup-failed">{{ model.error }}</span>
-                <span v-else-if="model.state === 'ready'" class="setup-working">已就绪</span>
-                <span v-else>等待下载</span>
-              </div>
-              <button
-                v-if="model.state === 'failed'"
-                type="button"
-                :disabled="retrying || models.phase === 'downloading'"
-                @click="emit('retryModel', model.model_id)"
-              >
-                重试
-              </button>
-            </li>
-          </ul>
-          <div v-if="models.phase === 'failed'" class="setup-model-help" role="alert">
-            下载失败时可检查网络或代理后重试；也可以在「模型管理」中补下，或导入本地权重。
-          </div>
-          <p v-if="models.phase === 'complete'" class="setup-success" role="status">
-            内置模型已准备完成。选择模型并点击「开始推理」后才会进行识别。
-          </p>
-          <div class="setup-actions">
-            <button
-              v-if="models.phase === 'failed'"
-              type="button"
-              :disabled="retrying"
-              @click="emit('retryModels')"
-            >
-              {{ retrying ? '正在重试…' : '重试失败模型' }}
-            </button>
-            <button type="button" class="primary" @click="emit('continue')">
-              {{ models.phase === 'complete' ? '开始使用' : '稍后处理' }}
-            </button>
-          </div>
-        </template>
       </section>
     </div>
   </Transition>
@@ -236,21 +173,28 @@ function trapFocus(event: KeyboardEvent): void {
   gap: 16px;
 }
 
-.setup-mark {
+.setup-brand-wrap {
+  position: relative;
   width: 42px;
   height: 42px;
   flex: 0 0 42px;
-  display: grid;
-  place-items: center;
-  border-radius: 12px;
-  background: var(--accent);
-  color: var(--text-inverse);
-  font-size: 18px;
-  font-weight: 700;
 }
 
-.setup-mark.failed {
+.setup-mark-error {
+  position: absolute;
+  right: -5px;
+  bottom: -5px;
+  display: grid;
+  width: 19px;
+  height: 19px;
+  place-items: center;
+  border: 2px solid var(--bg-panel);
+  border-radius: 50%;
   background: var(--danger);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
 }
 
 .setup-heading h1 {
@@ -260,8 +204,7 @@ function trapFocus(event: KeyboardEvent): void {
 }
 
 .setup-subtitle,
-.setup-stage p,
-.setup-model-message {
+.setup-stage p {
   margin: 7px 0 0;
   color: var(--text-secondary);
 }
@@ -341,57 +284,6 @@ function trapFocus(event: KeyboardEvent): void {
 
 .setup-primary {
   margin-top: 18px;
-}
-
-.setup-model-message {
-  margin-top: 22px;
-}
-
-.setup-model-list {
-  display: grid;
-  gap: 8px;
-  max-height: 42vh;
-  overflow: auto;
-  margin: 16px 0 0;
-  padding: 0;
-  list-style: none;
-}
-
-.setup-model-list li {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 12px 0;
-  border-bottom: 1px solid var(--border);
-}
-
-.setup-model-copy {
-  display: grid;
-  gap: 3px;
-  min-width: 0;
-}
-
-.setup-model-copy span {
-  color: var(--text-secondary);
-  font-size: var(--text-sm);
-  overflow-wrap: anywhere;
-}
-
-.setup-model-help {
-  color: var(--danger);
-}
-
-.setup-success {
-  margin: 16px 0 0;
-  color: var(--success);
-}
-
-.setup-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  margin-top: 20px;
 }
 
 .setup-fade-enter-active,

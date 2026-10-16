@@ -38,6 +38,7 @@ function clearAll(): void {
 </script>
 
 <template>
+  <!-- 按模型展示类别清单，并将勾选变化回传给检测页。 -->
   <div class="class-filter">
     <div class="head">
       <span class="title">{{ modelId }} · 类别</span>

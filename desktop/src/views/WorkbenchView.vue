@@ -2,6 +2,7 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import EmptyState from '../components/EmptyState.vue'
 import CanvasStage, { type BoxObject } from '../components/CanvasStage.vue'
+import { DEFAULT_BOX_COLOR } from '../components/labelTypes'
 import { wsClient } from '../api/ws'
 import { formatError } from '../utils/errors'
 import { t } from '../locales'
@@ -104,7 +105,7 @@ function buildPayload() {
     },
     render: {
       label_template: labelTemplate.value,
-      default_color: '#2F6FED',
+      default_color: DEFAULT_BOX_COLOR,
       line_width: 2,
       show_confidence: true
     }
@@ -470,11 +471,12 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
-  /* handlers are process-lifetime */
+  /* 这些监听器跟随应用进程生命周期存在。 */
 })
 </script>
 
 <template>
+  <!-- 通用工作台：承载图片、视频和摄像头检测及结果复核流程。 -->
   <div class="page workbench-page">
     <div class="page-header">
       <h1 class="page-title">{{ t('workbench.title') }}</h1>
@@ -645,7 +647,7 @@ onUnmounted(() => {
               :class="{ selected: selectedId === o.id }"
               @click="selectedId = o.id"
             >
-              <span class="swatch" :style="{ background: o.style?.color || '#2F6FED' }" />
+              <span class="swatch" :style="{ background: o.style?.color || DEFAULT_BOX_COLOR }" />
               <span class="r-name">{{ o.id }}:{{ o.display }}</span>
               <span class="num r-conf">{{ o.confText }}</span>
               <button type="button" class="ghost mini" @click.stop="toggleVisible(o.id)">

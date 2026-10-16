@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import ClassPickerModal from './ClassPickerModal.vue'
+import { t } from '../locales'
 
 export interface ModelItem {
   model_id: string
@@ -62,14 +63,15 @@ function onClassUpdate(modelId: string, list: string[]): void {
 
 function statusLabel(model: ModelItem): string {
   if (model.runtime_available === false) return '缺少推理组件'
-  if (model.weights_available === false) return model.downloadable ? '未下载' : '缺少权重'
-  return model.loaded ? '已加载' : '未加载'
+  if (model.weights_available === false) return model.downloadable ? '未下载' : t('models.manualImportWeights')
+  return model.loaded ? t('models.loaded') : t('models.unloaded')
 }
 
 defineExpose({ classFilter })
 </script>
 
 <template>
+  <!-- 展示模型及其权重状态，并将选择结果交给调用页面。 -->
   <div class="model-picker" :class="{ compact }">
     <div class="list">
       <div v-for="m in models" :key="m.model_id" class="row">
@@ -96,7 +98,7 @@ defineExpose({ classFilter })
             :disabled="Boolean(downloadingModelId)"
             @click.stop.prevent="emit('download', m.model_id)"
           >
-            {{ downloadingModelId === m.model_id ? '下载中…' : '下载' }}
+            {{ downloadingModelId === m.model_id ? '下载中…' : '下载 / 重试' }}
           </button>
         </div>
       </div>

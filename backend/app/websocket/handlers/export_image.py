@@ -1,4 +1,4 @@
-"""Export image / multi-frame stills WebSocket handlers."""
+"""处理带标注图像和选定视频帧的导出请求。"""
 
 from __future__ import annotations
 
@@ -12,6 +12,12 @@ from app.websocket.server import ConnectionContext, WebSocketHub
 
 
 def register_export_image_handlers(hub: WebSocketHub) -> None:
+    """注册图像及选定帧的导出消息处理器。
+
+    Args:
+        hub: 管理 WebSocket 连接及处理器的服务实例。
+    """
+
     async def on_save_image(msg: dict[str, Any], ctx: ConnectionContext) -> dict[str, Any]:
         data = msg.get("data") or {}
         source = data.get("source_path")

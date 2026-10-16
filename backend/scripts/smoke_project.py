@@ -1,4 +1,4 @@
-"""Smoke: project create / list / open."""
+"""用于手工检查 project 相关流程的辅助脚本。"""
 
 from __future__ import annotations
 
@@ -9,6 +9,12 @@ import websockets
 
 
 async def main() -> None:
+    """运行 project 相关的烟雾检查流程。
+
+    Raises:
+        SystemExit: 将项目流程烟雾检查失败状态传递给命令行。
+    """
+
     async with websockets.connect("ws://127.0.0.1:8765/ws") as ws:
         await ws.recv()
 

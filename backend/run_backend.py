@@ -1,4 +1,4 @@
-"""Bootstrap launcher for packaged app (embeddable Python ignores PYTHONPATH)."""
+"""提供启动 FastAPI 后端服务的命令行入口。"""
 
 from __future__ import annotations
 
@@ -7,7 +7,9 @@ from pathlib import Path
 
 
 def main() -> None:
-    # backend package dir is parent of this file (backend/run_backend.py)
+# 当前文件位于 backend 目录，父目录即为后端包所在目录。
+    """启动 FastAPI 后端服务。"""
+
     backend_dir = Path(__file__).resolve().parent
     if str(backend_dir) not in sys.path:
         sys.path.insert(0, str(backend_dir))

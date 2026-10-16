@@ -4,6 +4,7 @@ import { t } from '../locales'
 </script>
 
 <template>
+  <!-- 数据集管理页面入口与当前数据集状态。 -->
   <div class="page">
     <div class="page-header">
       <h1 class="page-title">{{ t('datasets.title') }}</h1>

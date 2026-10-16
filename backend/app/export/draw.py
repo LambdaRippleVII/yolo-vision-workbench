@@ -1,4 +1,4 @@
-"""Draw detection overlays on BGR frames (server-side export)."""
+"""把检测对象及其标签绘制到 OpenCV 图像上。"""
 
 from __future__ import annotations
 
@@ -9,6 +9,16 @@ import numpy as np
 
 
 def format_label(obj: dict[str, Any], template: str = "{id}:{class}") -> str:
+    """根据模板拼接检测对象的编号、类别、置信度和跟踪编号。
+
+    Args:
+        obj: 单个检测对象的数据。
+        template: 包含可替换字段的模板字符串。
+
+    Returns:
+        按模板替换字段后的标签文本。
+    """
+
     display = obj.get("display_name") or obj.get("class_name") or ""
     return (
         template.replace("{id}", str(obj.get("id", "")))
@@ -19,6 +29,16 @@ def format_label(obj: dict[str, Any], template: str = "{id}:{class}") -> str:
 
 
 def _hex_to_bgr(color: str, default=(237, 93, 76)) -> tuple[int, int, int]:
+    """把十六进制颜色字符串转换为 OpenCV 使用的 BGR 元组。
+
+    Args:
+        color: 十六进制颜色字符串，例如 ``#E8890C``。
+        default: 缺省值；配置项缺失或无法解析时使用该值。
+
+    Returns:
+        BGR 三元组；颜色格式无效时返回 default。
+    """
+
     try:
         c = color.lstrip("#")
         r, g, b = int(c[0:2], 16), int(c[2:4], 16), int(c[4:6], 16)
@@ -34,7 +54,17 @@ def draw_objects(
     label_template: str = "{id}:{class}",
     scale: float = 1.0,
 ) -> np.ndarray:
-    """In-place style draw. Skips visible=False. Assumes geom.bbox."""
+    """将可见检测框和标签绘制到输入帧上。
+
+    Args:
+        frame: 当前帧或帧结果数据。
+        objects: 检测对象列表。
+        label_template: 用于拼接对象编号、类别和置信度的标签模板。
+        scale: 应用于坐标和文字尺寸的缩放比例。
+
+    Returns:
+        已绘制检测结果的原始图像数组。
+    """
     h, w = frame.shape[:2]
     for obj in objects:
         if obj.get("visible") is False:

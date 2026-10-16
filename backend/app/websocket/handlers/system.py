@@ -1,4 +1,4 @@
-"""System-level WebSocket handlers: ping, health, hello_ack, shutdown."""
+"""处理系统状态、运行环境和日志相关请求。"""
 
 from __future__ import annotations
 
@@ -12,6 +12,13 @@ from app.websocket.server import ConnectionContext, WebSocketHub
 
 
 def register_system_handlers(hub: WebSocketHub, config) -> None:
+    """注册后端健康、环境状态和诊断消息处理器。
+
+    Args:
+        hub: 管理 WebSocket 连接及处理器的服务实例。
+        config: 当前操作使用的应用或模型配置。
+    """
+
     async def on_ping(msg: dict[str, Any], ctx: ConnectionContext) -> dict[str, Any]:
         return make_message(MessageType.PONG.value, {"server_ts": msg.get("ts")}, id_=msg.get("id"))
 
@@ -35,7 +42,7 @@ def register_system_handlers(hub: WebSocketHub, config) -> None:
 
     async def on_shutdown(msg: dict[str, Any], ctx: ConnectionContext) -> dict[str, Any]:
         logger.info("system.shutdown requested")
-        # Reply first; actual process exit is handled by the ASGI lifespan / caller.
+        # 先回复客户端；实际进程退出由 ASGI 生命周期或调用方处理。
         return make_message(
             MessageType.SYSTEM_SHUTDOWN.value,
             {"ok": True},

@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <title>YOLO Vision Workbench — 符号（深色底）</title>
+  <defs>
+    <linearGradient id="amber" gradientUnits="userSpaceOnUse" x1="22" y1="12" x2="102" y2="112">
+      <stop offset="0" stop-color="#FFC247"/>
+      <stop offset="1" stop-color="#F29311"/>
+    </linearGradient>
+  </defs>
+  <g stroke="#A7B8CC" stroke-width="10" stroke-linecap="round" fill="none">
+    <path d="M24 58 V 40 Q 24 24 40 24 H 58"/>
+    <path d="M104 70 V 88 Q 104 104 88 104 H 70"/>
+  </g>
+  <g stroke="url(#amber)" stroke-width="12" stroke-linecap="round" stroke-linejoin="round" fill="none">
+    <path d="M45 40 L64 61 L83 40 M64 61 L64 88"/>
+  </g>
+</svg>

@@ -110,6 +110,7 @@ onUnmounted(() => {
 </script>
 
 <template>
+  <!-- 推理任务列表与单个任务的状态、进度和结果入口。 -->
   <div class="page">
     <div class="page-header">
       <h1 class="page-title">{{ t('tasks.title') }}</h1>
@@ -188,7 +189,7 @@ onUnmounted(() => {
   background-color: var(--accent);
 }
 .progress {
-  background: linear-gradient(to right, var(--bg-active), var(--bg-active));
+  background: var(--bg-active);
 }
 .bar {
   background: var(--accent);

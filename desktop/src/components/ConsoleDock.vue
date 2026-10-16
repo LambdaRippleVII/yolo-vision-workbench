@@ -31,8 +31,9 @@ const lastLine = computed(() => props.logs[0]?.message || t('console.empty'))
 </script>
 
 <template>
+  <!-- 可折叠控制台：保留连接状态，并在展开后显示后端诊断日志。 -->
   <div class="console-root" :class="{ expanded }">
-    <!-- slim status bar always visible -->
+    <!-- 始终可见的窄状态栏 -->
     <div class="status-bar" @click="emit('update:expanded', !expanded)">
       <div class="tabs">
         <button type="button" class="tab" :class="{ active: tab === 'logs' }" @click.stop="tab = 'logs'">
@@ -51,7 +52,7 @@ const lastLine = computed(() => props.logs[0]?.message || t('console.empty'))
       <span class="chev">{{ expanded ? '▾' : '▴' }}</span>
     </div>
 
-    <!-- expanded overlay panel -->
+    <!-- 展开后的浮层日志面板 -->
     <div v-if="expanded" class="panel">
       <div class="body">
         <template v-if="tab === 'logs'">
@@ -88,9 +89,9 @@ const lastLine = computed(() => props.logs[0]?.message || t('console.empty'))
   display: flex;
   align-items: center;
   gap: 10px;
-  height: 32px;
+  height: var(--console-collapsed-h);
   padding: 0 12px;
-  background: var(--bg-panel);
+  background: var(--bg-chrome);
   border-top: 1px solid var(--border);
   cursor: pointer;
   user-select: none;
@@ -109,7 +110,7 @@ const lastLine = computed(() => props.logs[0]?.message || t('console.empty'))
 }
 .tab.active {
   background: var(--bg-active);
-  color: var(--accent);
+  color: var(--accent-ink);
   font-weight: 550;
 }
 .err-badge {
@@ -140,16 +141,16 @@ const lastLine = computed(() => props.logs[0]?.message || t('console.empty'))
   color: var(--text-muted);
   font-size: 12px;
 }
-/* overlay: does not push main content */
+/* 浮层不改变主内容的布局高度。 */
 .panel {
   position: absolute;
   left: 0;
   right: 0;
-  bottom: 32px;
+  bottom: var(--console-collapsed-h);
   height: min(240px, 36vh);
   background: var(--bg-panel);
   border-top: 1px solid var(--border);
-  box-shadow: 0 -8px 24px rgba(20, 28, 40, 0.12);
+  box-shadow: 0 -6px 18px -6px rgba(17, 24, 33, 0.14);
   display: flex;
   flex-direction: column;
 }
@@ -158,7 +159,7 @@ const lastLine = computed(() => props.logs[0]?.message || t('console.empty'))
   overflow: auto;
   padding: 8px 12px;
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: var(--text-xs);
 }
 .log-line {
   display: grid;

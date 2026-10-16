@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import {
+  DEFAULT_BOX_COLOR,
   fillTemplate,
   type LabelSettings,
   defaultLabelSettings
@@ -140,12 +141,12 @@ function draw(): void {
       ctx.rotate(rot)
       ctx.translate(-cx, -cy)
       if (useBg) {
-        ctx.fillStyle = fallbackBg || o.style?.color || style.bg || '#2F6FED'
+        ctx.fillStyle = fallbackBg || o.style?.color || style.bg || DEFAULT_BOX_COLOR
         ctx.fillRect(tx, ty, tw, th)
       }
       ctx.fillStyle = style.color
       ctx.textBaseline = 'middle'
-      // slight shadow when no bg for readability
+      // 没有标签背景时增加轻微阴影，保证文字在画面上可读。
       if (!useBg) {
         ctx.shadowColor = 'rgba(0,0,0,0.55)'
         ctx.shadowBlur = 2
@@ -268,6 +269,7 @@ defineExpose({ zoomLevel: computed(() => zoom.value) })
 </script>
 
 <template>
+  <!-- 检测画布：呈现媒体底图、边界框、标签和鼠标交互。 -->
   <div
     ref="wrapRef"
     class="canvas-wrap"

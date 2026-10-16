@@ -1,6 +1,4 @@
-/**
- * Port helpers: find free port, probe existing backend.
- */
+/** 提供本地端口空闲检测和后端健康探测工具。 */
 import { createServer } from 'net'
 
 export async function isPortFree(port: number, host = '127.0.0.1'): Promise<boolean> {
@@ -42,7 +40,7 @@ export async function probeBackendHealth(host: string, port: number, timeoutMs =
   }
 }
 
-/** True if something listens but is not our backend (port conflict). */
+/** 判断端口是否被无法通过本应用健康检查的其他服务占用。 */
 export async function isForeignPortBusy(host: string, port: number): Promise<boolean> {
   const free = await isPortFree(port, host)
   if (free) return false
